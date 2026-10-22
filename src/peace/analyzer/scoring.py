@@ -1,11 +1,10 @@
-"""Расчёт доверия к информации.
+"""Source trust and multi-source confidence calculation.
 
-Идея: каждый источник имеет базовый вес; подтверждения из разных независимых
-источников складываются по формуле P = 1 - Π(1 - w_i), т.е. два источника
-по 0.6 дают 0.84.
+Each source has a base trust weight; independent confirmations combine via
+P = 1 - Π(1 - w_i), so two sources with weight 0.6 yield 0.84.
 
-Затухания по времени НЕТ: угроза держится до новой информации (снятие / отбой),
-а «давность» показывается пользователю отдельно.
+There is no time decay: threats remain active until new information arrives
+(partial clear or all-clear), while message age is displayed separately.
 """
 from __future__ import annotations
 
@@ -21,7 +20,7 @@ def source_weight(source: str) -> float:
     for c in channels():
         if c["username"].lower() == source.lower():
             return float(c["weight"])
-    return 0.3  # неизвестный источник
+    return 0.3  # Unknown source
 
 
 def is_official(source: str) -> bool:
@@ -31,7 +30,7 @@ def is_official(source: str) -> bool:
 
 
 def combined_confidence(events: list[ParsedEvent]) -> float:
-    """Каждый источник учитывается один раз, сколько бы сообщений он ни прислал."""
+    """Each unique source contributes once regardless of how many messages it sent."""
     p_wrong = 1.0
     for source in {ev.source for ev in events}:
         p_wrong *= 1.0 - source_weight(source)

@@ -1,4 +1,4 @@
-"""SQLite: подписчики и история событий (для отладки и улучшения парсера)."""
+"""SQLite storage for subscriber preferences and parsed event history."""
 from __future__ import annotations
 
 import json
@@ -11,7 +11,7 @@ from peace.models import ParsedEvent
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS subscribers (
     chat_id   INTEGER NOT NULL,
-    district  TEXT    NOT NULL,   -- '*' = все районы
+    district  TEXT    NOT NULL,   -- '*' = all districts
     PRIMARY KEY (chat_id, district)
 );
 CREATE TABLE IF NOT EXISTS events (

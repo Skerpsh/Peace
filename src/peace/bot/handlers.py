@@ -1,4 +1,4 @@
-"""Команды бота для пользователей (aiogram 3)."""
+"""Telegram bot command handlers (aiogram 3)."""
 from __future__ import annotations
 
 from aiogram import Router
@@ -18,11 +18,11 @@ def build_router(db: Database, aggregator: Aggregator) -> Router:
     async def start(m: Message) -> None:
         await db.subscribe(m.chat.id, "*")
         await m.answer(
-            "Привіт! Я стежу за повітряними тривогами по Києву та області.\n\n"
-            "/status — поточна ситуація\n"
-            "/districts — список районів\n"
-            "/subscribe &lt;район&gt; — тільки обраний район\n"
-            "/stop — відписатися"
+            "Hello! I monitor real-time air alerts for Kyiv and Kyiv Oblast.\n\n"
+            "/status — current situation\n"
+            "/districts — list available districts\n"
+            "/subscribe &lt;district&gt; — subscribe to a specific district only\n"
+            "/stop — unsubscribe from alerts"
         )
 
     @router.message(Command("status"))
@@ -38,15 +38,15 @@ def build_router(db: Database, aggregator: Aggregator) -> Router:
     async def subscribe(m: Message, command: CommandObject) -> None:
         key = (command.args or "").strip()
         if key not in regions():
-            await m.answer("Вкажіть район з /districts, напр. <code>/subscribe obolonskyi</code>")
+            await m.answer("Specify a valid district from /districts, e.g. <code>/subscribe obolonskyi</code>")
             return
         await db.unsubscribe(m.chat.id)
         await db.subscribe(m.chat.id, key)
-        await m.answer(f"Готово, підписка на {regions()[key]['name']}")
+        await m.answer(f"Subscribed to {regions()[key]['name']}.")
 
     @router.message(Command("stop"))
     async def stop(m: Message) -> None:
         await db.unsubscribe(m.chat.id)
-        await m.answer("Ви відписані. /start — підписатися знову.")
+        await m.answer("You have unsubscribed. Send /start to subscribe again.")
 
     return router

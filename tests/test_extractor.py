@@ -36,7 +36,7 @@ def test_missile_and_drones_is_red_with_full_list():
 
 
 def test_threat_type_wins_over_emoji():
-    # даже если канал поставил 🔴, шахеды = жёлтый
+    # Even if a channel uses 🔴, Shahed drones map to yellow
     ev = extract(_msg("🔴 Київ — шахеди над Дніпром"))
     assert ev is not None and ev.level is AlertLevel.YELLOW
 

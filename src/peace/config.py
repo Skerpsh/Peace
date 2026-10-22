@@ -1,4 +1,4 @@
-"""Загрузка настроек из .env и yaml-файлов."""
+"""Configuration loader for .env and YAML files."""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     bot_token: str
     alerts_api_token: str = ""
     db_path: str = "data/peace.db"
-    # угроза НЕ истекает; через столько минут без новостей показываем пометку «давно без оновлень»
+    # Threats do not expire; after this many minutes without updates, a staleness notice is shown
     stale_after_minutes: int = 30
     min_confidence: float = 0.6
 
@@ -42,7 +42,7 @@ def channels() -> list[dict]:
 
 @lru_cache
 def regions() -> dict[str, dict]:
-    """Плоский словарь: key -> {name, aliases, area}."""
+    """Flat dictionary: key -> {name, aliases, area}."""
     data = _load_yaml("regions.yaml")
     flat: dict[str, dict] = {}
     for area, items in data.items():

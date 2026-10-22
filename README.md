@@ -1,33 +1,33 @@
-# Project PEACE — агрегатор воздушных тревог (Киев / Киевская область)
+# Project PEACE — Kyiv & Kyiv Oblast Air Alert Aggregator
 
-Telegram-бот, который в реальном времени читает ~5 Telegram-каналов о воздушной тревоге,
-извлекает из сообщений структурированные данные (район, уровень, тип угрозы, направление),
-сверяет источники между собой и с официальным API тревог, и отдаёт пользователю
-только свежую и подтверждённую информацию.
+Real-time Telegram bot that monitors ~5 Telegram channels reporting air alerts,
+extracts structured threat data (district, alert level, threat type, direction),
+cross-verifies sources against each other and the official alerts API, and delivers
+fresh, verified updates to subscribers.
 
-## Механика уровней тревоги (Киев / область)
+## Alert Level Mechanics (Kyiv / Kyiv Oblast)
 
-- 🟡 **Жёлтый** — угроза БпЛА (шахеды, разведдроны)
-- 🔴 **Красный** — ракетная угроза (крылатые, баллистика, МиГ-31К / Ту-95). Если одновременно есть и ракеты, и БпЛА — уровень 🔴 + полный список целей
-- ⚠️ **Тревога (уточняется)** — тревога объявлена, тип угрозы ещё не известен
-- Угроза держится до новой информации (частичное снятие, например «загроза ракет минула, БпЛА лишаються», или полный отбой)
+- 🟡 **Yellow** — UAV threat (Shahed / reconnaissance drones)
+- 🔴 **Red** — Missile threat (cruise missiles, ballistic missiles, MiG-31K / Tu-95). If both missiles and UAVs are active simultaneously, the level is 🔴 with the full list of active targets
+- ⚠️ **Alert (pending details)** — Air alert declared, specific threat type not yet identified
+- Threats persist until new information arrives (partial clear, e.g. "missile threat cleared, UAVs remain", or full all-clear)
 
-## Архитектура
+## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Collect["1. Сбор"]
-        TG["Telethon userbot<br/>(читает каналы)"]
-        API["Официальный API тревог<br/>(alerts.in.ua)"]
+    subgraph Collect["1. Collection"]
+        TG["Telethon userbot<br/>(reads channels)"]
+        API["Official Alerts API<br/>(alerts.in.ua)"]
     end
-    subgraph Parse["2. Разбор"]
-        N["normalizer"] --> E["extractor<br/>(районы, угрозы, направление)"]
+    subgraph Parse["2. Parsing"]
+        N["normalizer"] --> E["extractor<br/>(districts, threats, direction)"]
     end
-    subgraph Analyze["3. Анализ"]
-        AG["aggregator<br/>(сведение, дедуп)"] --> SC["scoring<br/>(доверие источников)"]
+    subgraph Analyze["3. Analysis"]
+        AG["aggregator<br/>(state & dedup)"] --> SC["scoring<br/>(source confidence)"]
     end
     DB[("SQLite")]
-    BOT["aiogram bot<br/>(пользователи)"]
+    BOT["aiogram bot<br/>(subscribers)"]
 
     TG --> N
     E --> AG
@@ -36,68 +36,63 @@ flowchart LR
     SC --> BOT
 ```
 
-> Почему два клиента: обычный Bot API **не может читать чужие каналы**, поэтому сбор идёт через
-> пользовательский аккаунт (Telethon, MTProto), а общение с пользователями — через обычного бота (aiogram).
+> Why two Telegram clients: standard Bot API **cannot read third-party channels**, so collection uses a user account via Telethon (MTProto), while user interaction uses a standard bot via aiogram.
 
-## Структура
+## Project Structure
 
 ```
 Project_PEACE/
 ├── config/
-│   ├── channels.yaml         # каналы-источники и их вес доверия
-│   ├── regions.yaml          # районы Киева и области + варианты написания
-│   └── threats.yaml          # типы угроз, уровни и ключевые слова
+│   ├── channels.yaml         # Source channels and their trust weights
+│   ├── regions.yaml          # Kyiv & Oblast districts + text aliases
+│   └── threats.yaml          # Threat types, alert levels, and keywords
 ├── deploy/
-│   ├── setup_vps.sh          # одноразовая настройка VPS (systemd, venv, deploy key)
-│   ├── update.sh             # обновление на VPS (git fetch, тесты, рестарт, автооткат)
-│   └── deploy.env.example    # шаблон настроек для ./deploy.sh
-├── deploy.sh                 # деплой одной командой с локальной машины
+│   ├── setup_vps.sh          # One-time VPS setup (systemd, venv, deploy key)
+│   ├── update.sh             # VPS updater (git fetch, pytest, restart, auto-rollback)
+│   └── deploy.env.example    # Optional config template for remote SSH deploy
+├── deploy.sh                 # One-command deploy & service manager
 ├── src/peace/
-│   ├── main.py               # точка входа, запускает все компоненты
-│   ├── login.py              # одноразовый интерактивный вход userbot-аккаунта
-│   ├── config.py             # настройки (.env + yaml)
-│   ├── models.py             # модели данных
+│   ├── main.py               # Entry point running all pipeline components
+│   ├── login.py              # One-time interactive Telethon userbot login
+│   ├── config.py             # Settings loader (.env + YAML)
+│   ├── models.py             # Data models
 │   ├── collector/
-│   │   ├── telegram_listener.py  # Telethon: новые/отредактированные сообщения
-│   │   └── official_api.py       # опрос официального API тревог
+│   │   ├── telegram_listener.py  # Telethon: new and edited channel messages
+│   │   └── official_api.py       # Official alerts.in.ua poller
 │   ├── parser/
-│   │   ├── normalizer.py     # чистка текста (регистр, укр/рус)
-│   │   └── extractor.py      # текст -> ParsedEvent
+│   │   ├── normalizer.py     # Text normalization
+│   │   └── extractor.py      # RawMessage -> ParsedEvent
 │   ├── analyzer/
-│   │   ├── scoring.py        # расчёт суммарного доверия источников
-│   │   └── aggregator.py     # сведение событий в текущую картину по районам
-│   ├── storage/db.py         # подписчики, история событий
+│   │   ├── scoring.py        # Multi-source confidence calculation
+│   │   └── aggregator.py     # Stateful per-district event aggregation
+│   ├── storage/db.py         # SQLite storage for subscribers and event logs
 │   └── bot/
-│       ├── handlers.py       # /start /status /subscribe ...
-│       └── formatter.py      # вывод для пользователя
+│       ├── handlers.py       # /start /status /districts /subscribe /stop
+│       └── formatter.py      # User-facing message formatting
 └── tests/
     ├── test_extractor.py
     └── test_aggregator.py
 ```
 
-## Локальный запуск
+## Local Development
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env              # заполнить ключи
-PYTHONPATH=src python -m peace.login   # один раз: вход по номеру телефона и коду
-PYTHONPATH=src python -m peace.main    # запуск бота
+cp .env.example .env                   # Fill in credentials
+PYTHONPATH=src python -m peace.login   # One-time: interactive phone + code login
+PYTHONPATH=src python -m peace.main    # Start the bot
 ```
 
-## Деплой на VPS
+## VPS Deployment
 
-### 1. Одноразовая настройка на VPS (Ubuntu / Debian)
-```bash
-bash setup_vps.sh git@github.com:Skerpsh/Peace.git main
-```
-Затем на VPS заполнить `.env`, один раз выполнить `PYTHONPATH=src .venv/bin/python -m peace.login` и запустить сервис `sudo systemctl start peace-bot`.
+Run directly on the VPS inside the cloned repository (e.g. `/opt/Peace`):
 
-### 2. Обновление в одну команду
-Локально скопируйте `cp deploy/deploy.env.example deploy/deploy.env`, укажите `VPS_HOST` и `VPS_USER`, после чего при каждом изменении:
 ```bash
-./deploy.sh            # git push + обновление на VPS (с тестами и автооткатом)
-./deploy.sh logs       # логи бота в реальном времени
-./deploy.sh status     # статус systemd-сервиса
-./deploy.sh restart    # перезапуск сервиса
+./deploy.sh            # First run sets up venv, .env, and systemd; subsequent runs pull, test, and restart
+nano .env              # Fill in TG_API_ID, TG_API_HASH, BOT_TOKEN
+./deploy.sh login      # One-time interactive userbot login
+./deploy.sh restart    # Start/restart the peace-bot systemd service
+./deploy.sh logs       # Follow live logs
+./deploy.sh status     # Check systemd service status
 ```

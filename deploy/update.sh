@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Обновление бота НА VPS: подтягивает свежий код с GitHub, ставит зависимости
-# (если изменился requirements.txt), гоняет тесты и перезапускает сервис.
-# Если тесты упали или бот не поднялся — автоматический откат на прошлую версию.
+# Updates the bot on the VPS: fetches latest commits from GitHub, installs
+# dependencies if requirements.txt changed, runs pytest, and restarts systemd.
+# Automatically rolls back to the previous commit if tests or startup fail.
 #
-#   ./deploy.sh                          # основной способ запуска на VPS
-#   FORCE=1 ./deploy.sh                  # перезапустить, даже если код не менялся
-#   SKIP_TESTS=1 ./deploy.sh             # без тестов (не рекомендуется)
+#   ./deploy.sh                          # standard update command
+#   FORCE=1 ./deploy.sh                  # force restart even if no new commits
+#   SKIP_TESTS=1 ./deploy.sh             # skip pytest (not recommended)
 # =============================================================================
 set -euo pipefail
 
-# Весь код внутри функции: bash прочитает её целиком ДО выполнения, поэтому
-# git reset, меняющий этот самый файл, не сломает работающий скрипт.
+# Wrapped in a function so bash parses the entire script into memory before
+# git reset potentially modifies this file on disk.
 main() {
     cd "$(dirname "$0")/.."
     local SERVICE="peace-bot"
@@ -30,17 +30,17 @@ main() {
 
     local PREV NEW
     PREV="$(git rev-parse HEAD)"
-    say "Получение изменений из GitHub ($BRANCH)"
+    say "Fetching latest changes from GitHub ($BRANCH)"
     git fetch -q origin "$BRANCH"
     NEW="$(git rev-parse "origin/$BRANCH")"
 
     if [ "$PREV" = "$NEW" ] && [ "${FORCE:-0}" != "1" ]; then
-        ok "Код уже на самой свежей версии: $(git log -1 --format='%h %s')"
+        ok "Already up to date: $(git log -1 --format='%h %s')"
     else
-        # .env, data/ (сессия, БД) и .venv в .gitignore — reset их не трогает
+        # .env, data/ (session, DB), and .venv are gitignored and untouched by reset
         git reset -q --hard "$NEW"
         if [ "$PREV" != "$NEW" ]; then
-            echo "Новые коммиты:"
+            echo "New commits:"
             git log --format='  %h %s (%an)' "$PREV..$NEW"
         fi
     fi
@@ -48,12 +48,12 @@ main() {
     local DEPS_CHANGED=0
     if ! git diff --quiet "$PREV" "$NEW" -- requirements.txt || [ ! -x .venv/bin/python ]; then
         DEPS_CHANGED=1
-        say "Установка/обновление зависимостей Python"
+        say "Installing/updating Python dependencies"
         install_deps
     fi
 
     rollback() {
-        fail "$1 — откат на $(git log -1 --format='%h %s' "$PREV")"
+        fail "$1 — rolling back to $(git log -1 --format='%h %s' "$PREV")"
         git reset -q --hard "$PREV"
         [ "$DEPS_CHANGED" = "1" ] && install_deps
         if [ "${RESTARTED:-0}" = "1" ]; then
@@ -63,43 +63,42 @@ main() {
     }
 
     if [ "${SKIP_TESTS:-0}" != "1" ]; then
-        say "Проверка тестами"
-        PYTHONPATH=src .venv/bin/python -m pytest -q -p no:cacheprovider || rollback "Тесты не прошли"
+        say "Running test suite"
+        PYTHONPATH=src .venv/bin/python -m pytest -q -p no:cacheprovider || rollback "Test suite failed"
     fi
 
-    # Первый деплой: ещё нет ключей или сессии userbot — сервис не трогаем
+    # Initial deploy check: skip service restart if .env or userbot session is missing
     local SESSION
     SESSION="$(grep -E '^TG_SESSION_NAME=' .env 2>/dev/null | cut -d= -f2- || true)"
     SESSION="${SESSION:-data/peace_userbot}.session"
     if [ ! -f .env ] || [ ! -f "$SESSION" ]; then
-        fail "Ещё не заполнены ключи (.env) или нет сессии ($SESSION) — код обновлён, сервис пока не запущен."
-        echo "  1) Заполните .env:  nano .env"
-        echo "  2) Авторизуйте userbot:  ./deploy.sh login"
-        echo "  3) Запустите бота:  ./deploy.sh restart"
+        fail "Missing .env or userbot session ($SESSION) — code updated, service not started yet."
+        echo "  1) Configure credentials:  nano .env"
+        echo "  2) Log in to userbot:      ./deploy.sh login"
+        echo "  3) Start service:          ./deploy.sh restart"
         return 0
     fi
 
-    # Если код не менялся и сервис уже активен (и не задан FORCE=1) — рестарт не нужен
     if [ "$PREV" = "$NEW" ] && [ "${FORCE:-0}" != "1" ] && systemctl is-active --quiet "$SERVICE"; then
-        ok "Сервис $SERVICE работает."
+        ok "Service '$SERVICE' is active and running."
         return 0
     fi
 
-    say "Перезапуск $SERVICE"
+    say "Restarting $SERVICE"
     $SUDO systemctl reset-failed "$SERVICE" 2>/dev/null || true
     $SUDO systemctl restart "$SERVICE"
     RESTARTED=1
 
-    # Ждём, чтобы поймать падение при старте (Restart=always перезапускает тихо)
+    # Wait briefly to verify the process does not crash on startup
     sleep 8
     local NRESTARTS
     NRESTARTS="$(systemctl show -p NRestarts --value "$SERVICE" 2>/dev/null || echo 0)"
     if ! systemctl is-active --quiet "$SERVICE" || [ "${NRESTARTS:-0}" -gt 0 ]; then
         journalctl -u "$SERVICE" -n 30 --no-pager 2>/dev/null || true
-        rollback "Бот не запустился"
+        rollback "Service failed to stay up after restart"
     fi
 
-    ok "Обновлено и запущено: $(git log -1 --format='%h %s')"
+    ok "Deployed and running: $(git log -1 --format='%h %s')"
     journalctl -u "$SERVICE" -n 10 --no-pager 2>/dev/null || true
 }
 

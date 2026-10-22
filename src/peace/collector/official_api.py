@@ -1,7 +1,7 @@
-"""Опрос официального API тревог — «эталон» для статуса тревоги (есть / нет).
+"""Polls the official air alerts API as the ground-truth source for alert active/all-clear status.
 
-Используется alerts.in.ua (токен по запросу). Документация: https://devs.alerts.in.ua/
-UID регионов (проверить по документации): м. Київ = 31, Київська область = 14.
+Uses alerts.in.ua (API token available upon request). Docs: https://devs.alerts.in.ua/
+Region UIDs (verify against official docs): Kyiv City = 31, Kyiv Oblast = 14.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ POLL_SECONDS = 15
 async def run_official_poller(queue: asyncio.Queue[ParsedEvent]) -> None:
     token = settings().alerts_api_token
     if not token:
-        log.warning("ALERTS_API_TOKEN не задан — официальный API отключён")
+        log.warning("ALERTS_API_TOKEN is not set — official alerts API poller is disabled")
         return
 
     headers = {"Authorization": f"Bearer {token}"}
@@ -43,7 +43,7 @@ async def run_official_poller(queue: asyncio.Queue[ParsedEvent]) -> None:
                     if str(a.get("location_uid")) in REGION_MAP
                 }
                 now = datetime.now(timezone.utc)
-                # Шлём событие только при изменении состояния
+                # Emit an event only when the active state changes
                 for district in active - prev_active:
                     await queue.put(_event(district, now, all_clear=False))
                 for district in prev_active - active:
@@ -60,7 +60,7 @@ def _event(district: str, ts: datetime, all_clear: bool) -> ParsedEvent:
         message_id=0,
         timestamp=ts,
         districts=[district],
-        # API знает только факт тревоги, но не тип угрозы -> цвет уточнят каналы
+        # Official API only reports whether an alert is active, not the specific threat type
         level=AlertLevel.NONE if all_clear else AlertLevel.ALERT,
         threats=[],
         direction=None,

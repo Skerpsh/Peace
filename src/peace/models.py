@@ -1,4 +1,4 @@
-"""Модели данных, которые проходят через конвейер: Raw -> Parsed -> Situation."""
+"""Data models flowing through the pipeline: RawMessage -> ParsedEvent -> Situation."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,11 +7,11 @@ from enum import Enum
 
 
 class AlertLevel(str, Enum):
-    """Механика Киева: цвет зависит от ТИПА угрозы."""
+    """Kyiv alert mechanics: alert color is determined by the threat type."""
     NONE = "none"
-    ALERT = "alert"     # тревога объявлена, тип угрозы пока не известен
-    YELLOW = "yellow"   # угроза БпЛА (шахеды)
-    RED = "red"         # ракетная угроза (крылатые, баллистика)
+    ALERT = "alert"     # Air alert declared, threat type not yet identified
+    YELLOW = "yellow"   # UAV threat (Shahed / reconnaissance drones)
+    RED = "red"         # Missile threat (cruise, ballistic, MiG-31K)
 
 
 @dataclass(slots=True)
@@ -28,26 +28,26 @@ class ParsedEvent:
     source: str
     message_id: int
     timestamp: datetime
-    districts: list[str]            # ключи из regions.yaml
+    districts: list[str]            # Keys from regions.yaml
     level: AlertLevel
-    threats: list[str]              # ключи из threats.yaml
+    threats: list[str]              # Keys from threats.yaml
     direction: str | None
-    is_all_clear: bool              # полный отбой тревоги
+    is_all_clear: bool              # Full all-clear for the district
     raw_text: str
-    # угрозы, которые сообщение СНИМАЕТ без полного отбоя
-    # ("загроза ракет минула, БпЛА лишаються" -> ["missile", ...])
+    # Threat types cleared without a full all-clear
+    # (e.g. "missile threat cleared, UAVs remain" -> ["missile", ...])
     cleared_threats: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
 class Situation:
-    """Текущая агрегированная картина по одному району."""
+    """Current aggregated state for a single district."""
     district: str
     level: AlertLevel
     threats: list[str] = field(default_factory=list)
-    cleared: list[str] = field(default_factory=list)   # угрозы, снятые в ходе этой тревоги
+    cleared: list[str] = field(default_factory=list)   # Threats cleared during the current alert
     direction: str | None = None
     confidence: float = 0.0
-    confirmed: bool = False         # доверие >= MIN_CONFIDENCE
+    confirmed: bool = False         # True when confidence >= MIN_CONFIDENCE
     sources: list[str] = field(default_factory=list)
     updated_at: datetime | None = None

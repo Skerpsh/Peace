@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Универсальный скрипт деплоя и управления ботом.
+# Universal deployment and service management script for Project PEACE.
 #
-# Работает в двух режимах:
-#   1) ПРЯМО НА VPS (в папке /opt/Peace, без deploy/deploy.env):
-#        ./deploy.sh            подтянуть код с GitHub, прогнать тесты и перезапустить
-#        ./deploy.sh setup      первичная установка (venv, .env, systemd-сервис)
-#        ./deploy.sh login      одноразовый вход в Telegram userbot-аккаунт
-#        ./deploy.sh status     статус сервиса peace-bot
-#        ./deploy.sh logs       логи бота в реальном времени (Ctrl+C — выход)
-#        ./deploy.sh restart    перезапуск сервиса
+# Supports two modes:
+#   1) DIRECTLY ON VPS (inside /opt/Peace, without deploy/deploy.env):
+#        ./deploy.sh            pull from GitHub, run tests, and restart service
+#        ./deploy.sh setup      initial environment & systemd service setup
+#        ./deploy.sh login      one-time interactive Telegram userbot login
+#        ./deploy.sh status     show peace-bot systemd service status
+#        ./deploy.sh logs       follow live service logs (Ctrl+C to exit)
+#        ./deploy.sh restart    restart peace-bot service
 #
-#   2) С ЛОКАЛЬНОГО ПК ПО SSH (если заполнен deploy/deploy.env с реальным VPS_HOST):
-#        ./deploy.sh            git push + обновление на VPS по SSH
+#   2) FROM LOCAL MACHINE OVER SSH (when deploy/deploy.env has a real VPS_HOST):
+#        ./deploy.sh            git push + remote update on VPS over SSH
 #        ./deploy.sh status|logs|restart|ssh
 # =============================================================================
 set -euo pipefail
@@ -27,7 +27,7 @@ if [ -f "$CONF" ]; then
     source "$CONF"
 fi
 
-# Если deploy.env не создан или там остался шаблон 1.2.3.4 — работаем локально на этом сервере
+# If deploy.env does not exist or still has the placeholder IP, run locally on this machine
 if [ -z "${VPS_HOST:-}" ] || [ "$VPS_HOST" = "1.2.3.4" ]; then
     SUDO=""
     [ "$(id -u)" -eq 0 ] || SUDO="sudo"
@@ -52,9 +52,8 @@ if [ -z "${VPS_HOST:-}" ] || [ "$VPS_HOST" = "1.2.3.4" ]; then
             systemctl status "$SERVICE" --no-pager
             ;;
         deploy|update)
-            # Если сервис ещё ни разу не ставился — сначала первичная настройка
             if [ ! -f "/etc/systemd/system/$SERVICE.service" ]; then
-                echo "==> Первичный запуск: настраиваю окружение и systemd-сервис..."
+                echo "==> First run: setting up environment and systemd service..."
                 bash deploy/setup_vps.sh
             fi
             bash deploy/update.sh "$BRANCH"
@@ -67,7 +66,7 @@ if [ -z "${VPS_HOST:-}" ] || [ "$VPS_HOST" = "1.2.3.4" ]; then
     exit 0
 fi
 
-# --- Режим удалённого деплоя с локального ПК по SSH --------------------------
+# --- Remote SSH deployment mode from local machine ---------------------------
 VPS_USER="${VPS_USER:-$USER}"
 VPS_PORT="${VPS_PORT:-22}"
 VPS_DIR="${VPS_DIR:-/opt/Peace}"
@@ -83,23 +82,23 @@ case "${1:-deploy}" in
     ssh)     remote_tty "cd $VPS_DIR && exec \$SHELL -l" ;;
     deploy|update)
         if [ -n "$(git status --porcelain)" ]; then
-            echo "⚠ Есть незакоммиченные изменения (на сервер не попадут):"
+            echo "WARNING: Uncommitted local changes will not be deployed:"
             git status --short
-            read -r -p "Продолжить? [y/N] " ans
-            [[ "$ans" =~ ^[yYдД]$ ]] || exit 1
+            read -r -p "Continue anyway? [y/N] " ans
+            [[ "$ans" =~ ^[yY]$ ]] || exit 1
         fi
 
         CUR="$(git rev-parse --abbrev-ref HEAD)"
         if [ "$CUR" != "$BRANCH" ]; then
-            echo "⚠ Вы на ветке '$CUR', а деплоится '$BRANCH'."
-            read -r -p "Продолжить? [y/N] " ans
-            [[ "$ans" =~ ^[yYдД]$ ]] || exit 1
+            echo "WARNING: Current branch is '$CUR', deploying '$BRANCH'."
+            read -r -p "Continue anyway? [y/N] " ans
+            [[ "$ans" =~ ^[yY]$ ]] || exit 1
         fi
 
         echo "==> git push origin $BRANCH"
         git push origin "$BRANCH"
 
-        echo "==> Обновление на $VPS_USER@$VPS_HOST ($VPS_DIR)"
+        echo "==> Updating on $VPS_USER@$VPS_HOST ($VPS_DIR)"
         remote_cmd "cd $VPS_DIR && bash deploy/update.sh $BRANCH"
         ;;
     *)

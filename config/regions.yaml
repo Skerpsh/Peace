@@ -1,24 +1,24 @@
-# Ключ — каноническое название, aliases — варианты в тексте (укр/рус, падежи — по корню).
-# Поиск идёт по вхождению подстроки в нормализованный (нижний регистр) текст.
+# Canonical district keys, English display names, and text aliases (UA/RU/EN roots for matching).
+# Matching checks substring presence in normalized (lowercase) message text.
 kyiv_city:
-  holosiivskyi:   {name: "Голосіївський р-н", aliases: ["голосіїв", "голосеев"]}
-  darnytskyi:     {name: "Дарницький р-н",    aliases: ["дарниц"]}
-  desnianskyi:    {name: "Деснянський р-н",   aliases: ["деснян", "троєщин", "троещин"]}
-  dniprovskyi:    {name: "Дніпровський р-н",  aliases: ["дніпровськ", "днепровск"]}
-  obolonskyi:     {name: "Оболонський р-н",   aliases: ["оболон"]}
-  pecherskyi:     {name: "Печерський р-н",    aliases: ["печерськ", "печерск"]}
-  podilskyi:      {name: "Подільський р-н",   aliases: ["поділ", "подол"]}
-  sviatoshynskyi: {name: "Святошинський р-н", aliases: ["святошин"]}
-  solomianskyi:   {name: "Солом'янський р-н", aliases: ["солом'ян", "соломян", "соломен"]}
-  shevchenkivskyi: {name: "Шевченківський р-н", aliases: ["шевченків", "шевченковск"]}
-  kyiv_all:       {name: "м. Київ",           aliases: ["київ", "києв", "киев", "столиц"]}
+  holosiivskyi:    {name: "Holosiivskyi District",    aliases: ["голосіїв", "голосеев", "holosiiv"]}
+  darnytskyi:      {name: "Darnytskyi District",      aliases: ["дарниц", "darnyts"]}
+  desnianskyi:     {name: "Desnianskyi District",     aliases: ["деснян", "троєщин", "троещин", "desnian"]}
+  dniprovskyi:     {name: "Dniprovskyi District",     aliases: ["дніпровськ", "днепровск", "dniprovsk"]}
+  obolonskyi:      {name: "Obolonskyi District",      aliases: ["оболон", "obolon"]}
+  pecherskyi:      {name: "Pecherskyi District",      aliases: ["печерськ", "печерск", "pechersk"]}
+  podilskyi:       {name: "Podilskyi District",       aliases: ["поділ", "подол", "podil"]}
+  sviatoshynskyi:  {name: "Sviatoshynskyi District",  aliases: ["святошин", "sviatoshyn"]}
+  solomianskyi:    {name: "Solomianskyi District",    aliases: ["солом'ян", "соломян", "соломен", "solomian"]}
+  shevchenkivskyi: {name: "Shevchenkivskyi District", aliases: ["шевченків", "шевченковск", "shevchenkiv"]}
+  kyiv_all:        {name: "Kyiv City",                aliases: ["київ", "києв", "киев", "столиц", "kyiv", "kiev"]}
 
 kyiv_oblast:
-  bilotserkivskyi: {name: "Білоцерківський р-н", aliases: ["біла церкв", "белая церк", "білоцерків", "белоцерков"]}
-  boryspilskyi:    {name: "Бориспільський р-н",  aliases: ["бориспіл", "борисп"]}
-  brovarskyi:      {name: "Броварський р-н",     aliases: ["бровар"]}
-  buchanskyi:      {name: "Бучанський р-н",      aliases: ["буча", "бучанськ", "ірпін", "ирпен", "гостомел"]}
-  vyshhorodskyi:   {name: "Вишгородський р-н",   aliases: ["вишгород", "вышгород"]}
-  obukhivskyi:     {name: "Обухівський р-н",     aliases: ["обухів", "обухов", "українк", "украинк"]}
-  fastivskyi:      {name: "Фастівський р-н",     aliases: ["фастів", "фастов"]}
-  oblast_all:      {name: "Київська обл.",       aliases: ["київщин", "киевщин", "київська обл", "киевская обл"]}
+  bilotserkivskyi: {name: "Bila Tserkva District",    aliases: ["біла церкв", "белая церк", "білоцерків", "белоцерков", "bila tserkv", "bilotserkiv"]}
+  boryspilskyi:    {name: "Boryspil District",        aliases: ["бориспіл", "борисп", "boryspil"]}
+  brovarskyi:      {name: "Brovary District",         aliases: ["бровар", "brovar"]}
+  buchanskyi:      {name: "Bucha District",           aliases: ["буча", "бучанськ", "ірпін", "ирпен", "гостомел", "bucha", "irpin", "hostomel"]}
+  vyshhorodskyi:   {name: "Vyshhorod District",       aliases: ["вишгород", "вышгород", "vyshhorod"]}
+  obukhivskyi:     {name: "Obukhiv District",         aliases: ["обухів", "обухов", "українк", "украинк", "obukhiv"]}
+  fastivskyi:      {name: "Fastiv District",          aliases: ["фастів", "фастов", "fastiv"]}
+  oblast_all:      {name: "Kyiv Oblast",              aliases: ["київщин", "киевщин", "київська обл", "киевская обл", "kyiv oblast", "kyiv region"]}

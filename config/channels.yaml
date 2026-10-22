@@ -1,20 +1,20 @@
-# Каналы-источники.
-# weight — базовое доверие к источнику (0..1). Официальные — выше, мониторинговые — ниже.
-# official: true — источник может САМ объявлять тревогу/отбой.
-# ВНИМАНИЕ: юзернеймы ниже — примеры, их нужно проверить и заменить на нужные вам.
+# Source Telegram channels.
+# weight: base trust score (0..1). Official channels have higher weight than monitoring channels.
+# official: true — a single message from this source can clear an alert on its own.
+# NOTE: Verify and replace placeholder usernames below with your actual target channels.
 channels:
-  - username: kpszsu          # Повітряні сили ЗСУ (официальный)
+  - username: kpszsu          # Air Force of Ukraine (official)
     weight: 1.0
     official: true
-  - username: VA_Kyiv         # Київська міська військова адміністрація (проверить username)
+  - username: VA_Kyiv         # Kyiv City Military Administration (verify username)
     weight: 0.95
     official: true
-  - username: CHANGE_ME_1     # мониторинговый канал #1
+  - username: CHANGE_ME_1     # Monitoring channel #1
     weight: 0.7
     official: false
-  - username: CHANGE_ME_2     # мониторинговый канал #2
+  - username: CHANGE_ME_2     # Monitoring channel #2
     weight: 0.6
     official: false
-  - username: CHANGE_ME_3     # мониторинговый канал #3
+  - username: CHANGE_ME_3     # Monitoring channel #3
     weight: 0.6
     official: false

@@ -1,4 +1,4 @@
-"""Форматирование ситуации для пользователя."""
+"""User-facing message formatting."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -16,16 +16,16 @@ LEVEL_ICON = {
     AlertLevel.NONE: "🟢",
 }
 LEVEL_TEXT = {
-    AlertLevel.RED: "ракетна загроза",
-    AlertLevel.YELLOW: "загроза БпЛА",
-    AlertLevel.ALERT: "тривога, тип загрози уточнюється",
+    AlertLevel.RED: "missile threat",
+    AlertLevel.YELLOW: "UAV threat",
+    AlertLevel.ALERT: "air alert, threat type pending",
 }
 THREAT_NAMES = {
-    "ballistic": "балістика",
-    "cruise_missile": "крилаті ракети",
-    "missile": "ракети",
-    "shahed": "БпЛА (шахеди)",
-    "aviation": "активність авіації",
+    "ballistic": "ballistic missiles",
+    "cruise_missile": "cruise missiles",
+    "missile": "missiles",
+    "shahed": "UAVs (Shahed)",
+    "aviation": "enemy aviation activity",
 }
 _RANK = {AlertLevel.NONE: 0, AlertLevel.ALERT: 1, AlertLevel.YELLOW: 2, AlertLevel.RED: 3}
 
@@ -42,29 +42,29 @@ def format_situation(s: Situation) -> str:
     icon = LEVEL_ICON[s.level]
     if s.level is AlertLevel.NONE:
         if s.cleared:
-            return f"{icon} <b>{district_name(s.district)}</b> — загроза минула ({_names(s.cleared)})"
-        return f"{icon} <b>{district_name(s.district)}</b> — відбій"
+            return f"{icon} <b>{district_name(s.district)}</b> — threat cleared ({_names(s.cleared)})"
+        return f"{icon} <b>{district_name(s.district)}</b> — all clear"
 
     lines = [f"{icon} <b>{district_name(s.district)}</b> — {LEVEL_TEXT[s.level]}"]
     if not s.confirmed:
-        lines.append("❔ <i>не підтверджено</i>")
+        lines.append("❔ <i>unconfirmed</i>")
     if s.threats:
-        lines.append("Цілі: " + _names(s.threats))
+        lines.append("Targets: " + _names(s.threats))
     if s.cleared:
-        lines.append("✅ Минула: " + _names(s.cleared))
+        lines.append("✅ Cleared: " + _names(s.cleared))
     if s.direction:
-        lines.append(f"Напрямок: {s.direction}")
+        lines.append(f"Direction: {s.direction}")
     time = s.updated_at.astimezone(KYIV_TZ).strftime("%H:%M") if s.updated_at else "—"
-    lines.append(f"<i>Довіра: {int(s.confidence * 100)}% · джерел: {len(s.sources)} · {time}</i>")
+    lines.append(f"<i>Confidence: {int(s.confidence * 100)}% · sources: {len(s.sources)} · {time}</i>")
     if s.updated_at:
         age_min = int((datetime.now(timezone.utc) - s.updated_at).total_seconds() // 60)
         if age_min >= settings().stale_after_minutes:
-            lines.append(f"⏳ <i>без оновлень {age_min} хв — інформація може бути неактуальною</i>")
+            lines.append(f"⏳ <i>no updates for {age_min} min — status may be outdated</i>")
     return "\n".join(lines)
 
 
 def format_snapshot(items: list[Situation]) -> str:
     if not items:
-        return "🟢 Зараз загроз для Києва та області не зафіксовано."
+        return "🟢 No active threats for Kyiv or Kyiv Oblast right now."
     items = sorted(items, key=lambda s: (-_RANK[s.level], s.district))
     return "\n\n".join(format_situation(s) for s in items)

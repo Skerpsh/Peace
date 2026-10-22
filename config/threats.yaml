@@ -1,49 +1,50 @@
-# Типы угроз: ключевые слова (корни, нижний регистр) и уровень тревоги.
-# Механика Киева:
-#   yellow — угроза БпЛА (шахеды, разведдроны)
-#   red    — ракетная угроза (крылатые, баллистика, МиГ-31К / Кинджал)
-# Если одновременно есть и ракеты, и БпЛА — уровень red, а в списке целей все типы.
-# (КАБ для Киева/области сейчас не актуальны — не отслеживаем.)
+# Threat types: keyword roots (lowercase) and corresponding alert levels.
+# Kyiv alert mechanics:
+#   yellow — UAV threat (Shahed, reconnaissance drones)
+#   red    — Missile threat (cruise, ballistic, MiG-31K / Kinzhal)
+# If both missiles and UAVs are active, the level is red and all active targets are listed.
 #
-# clears — какие ещё типы снимаются, когда в сообщении «минула» эта угроза
-# (например, «ракетна небезпека минула» снимает и балистику, и крылатые).
+# clears: additional threat types cleared when this threat is reported as cleared
+# (e.g. "missile danger cleared" clears ballistic, cruise_missile, and aviation).
 threats:
   ballistic:
     level: red
-    words: ["балісти", "баллисти", "іскандер", "искандер", "кинджал", "кинжал"]
+    words: ["балісти", "баллисти", "іскандер", "искандер", "кинджал", "кинжал", "ballistic", "iskander", "kinzhal"]
   cruise_missile:
     level: red
-    words: ["крилат", "крылат", "калібр", "калибр", "х-101", "х-555"]
-  missile:          # ракета без уточнения типа
+    words: ["крилат", "крылат", "калібр", "калибр", "х-101", "х-555", "cruise missile", "kalibr", "kh-101"]
+  missile:          # Unspecified missile threat
     level: red
-    words: ["ракет"]
+    words: ["ракет", "missile"]
     clears: [ballistic, cruise_missile, aviation]
-  aviation:         # взлёт МиГ-31К / Ту-95 = потенциальный ракетный удар
+  aviation:         # MiG-31K / Tu-95 takeoff = potential missile strike
     level: red
-    words: ["авіаці", "авиаци", "ту-95", "ту-22", "міг-31", "миг-31"]
+    words: ["авіаці", "авиаци", "ту-95", "ту-22", "міг-31", "миг-31", "mig-31", "tu-95", "tu-22", "aviation"]
   shahed:
     level: yellow
-    words: ["шахед", "шахід", "бпла", "мопед", "дрон", "герань"]
+    words: ["шахед", "шахід", "бпла", "мопед", "дрон", "герань", "shahed", "uav", "drone"]
 
 markers:
-  # Начало тревоги без указания типа угрозы
-  alert:  ["повітряна тривога", "воздушная тревога", "тривога", "тревога", "загроза", "угроза", "в укриття", "в укрытие"]
-  # Цвет — только запасной вариант, если тип угрозы в тексте не указан
+  # Alert start without a specific threat type
+  alert:  ["повітряна тривога", "воздушная тревога", "тривога", "тревога", "загроза", "угроза", "в укриття", "в укрытие", "air alert", "take cover"]
+  # Color emojis used only as fallback when no threat type is found in the text
   red:    ["🔴"]
   yellow: ["🟡"]
-  # Снятие угрозы. Если во фразе с маркером есть тип угрозы — снимается только он
-  # («загроза ракет минула, БпЛА лишаються» -> красный -> жёлтый).
-  # Если типа нет — это полный отбой («відбій тривоги»).
+  # Threat clearance markers. If a clause with a clear marker mentions a threat type,
+  # only that threat type is cleared ("missile threat cleared, UAVs remain" -> red -> yellow).
+  # If no threat type is mentioned, it is treated as a full all-clear ("all clear").
   clear:  ["🟢", "відбій", "отбой", "минул", "минувал", "миновал", "знято", "знята", "снят",
-           "відсутн", "отсутств", "приземл", "посадк"]
+           "відсутн", "отсутств", "приземл", "посадк", "all clear", "cleared"]
 
-# Разделители фраз внутри сообщения (regex). Маркер снятия действует только в своей фразе.
-clause_split: "[.,;!?\\n]+|\\s(?:але|но|однак|проте|однако)\\s"
+# Clause delimiters within a message (regex). Clear markers apply only to their own clause.
+clause_split: "[.,;!?\\n]+|\\s(?:але|но|однак|проте|однако|but|however)\\s"
 
-# Шаблоны направления движения цели (regex, группа 1 — куда)
+# Target movement direction patterns (regex, group 1 = destination)
 direction_patterns:
   - "курсом на ([\\w'\\- ]+)"
   - "в напрямку ([\\w'\\- ]+)"
   - "в направлении ([\\w'\\- ]+)"
   - "рухається на ([\\w'\\- ]+)"
   - "движется на ([\\w'\\- ]+)"
+  - "heading towards ([\\w'\\- ]+)"
+  - "towards ([\\w'\\- ]+)"

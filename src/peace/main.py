@@ -1,4 +1,4 @@
-"""Точка входа: запускает сбор, анализ и бота в одном event loop."""
+"""Application entry point: runs collectors, parser pipeline, aggregator, and bot in one event loop."""
 from __future__ import annotations
 
 import asyncio
@@ -35,7 +35,7 @@ async def pipeline(
 async def analyzer_loop(
     event_q: asyncio.Queue[ParsedEvent], agg: Aggregator, db: Database, bot: Bot
 ) -> None:
-    """ParsedEvent -> Aggregator -> рассылка изменений подписчикам."""
+    """ParsedEvent -> Aggregator -> broadcast state changes to subscribers."""
     while True:
         ev = await event_q.get()
         await db.log_event(ev)

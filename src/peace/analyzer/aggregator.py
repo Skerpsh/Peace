@@ -1,8 +1,7 @@
-"""Сведение потока событий в актуальную картину по районам.
+"""Stateful aggregation of parsed events into a per-district situation picture.
 
-Принцип: угроза держится, пока не придёт НОВАЯ информация —
-снятие конкретной угрозы («ракети минули») или полный отбой.
-Таймеров истечения нет.
+Principle: an active threat persists until new information arrives — either a
+partial threat clearance ("missiles cleared") or a full all-clear.
 """
 from __future__ import annotations
 
@@ -25,10 +24,10 @@ class Aggregator:
         self._state: dict[str, Situation] = {}
 
     def add(self, ev: ParsedEvent) -> list[Situation]:
-        """Добавляет событие, возвращает список районов, где картина ИЗМЕНИЛАСЬ."""
+        """Adds an event and returns the list of districts whose situation changed."""
         key = (ev.source, ev.message_id, ev.raw_text)
         if ev.message_id and key in self._seen:
-            return []  # дубль
+            return []  # Duplicate
         self._seen.add(key)
 
         changed: list[Situation] = []
@@ -51,16 +50,16 @@ class Aggregator:
         evs = sorted(self._events[district], key=lambda e: e.timestamp)
         min_conf = settings().min_confidence
 
-        # Понижение уровня опаснее повышения, поэтому снятие (частичное или полное)
-        # применяем, только если источник официальный или его подтвердили
-        # несколько каналов с суммарным доверием >= MIN_CONFIDENCE.
+        # Downgrading/clearing an alert is riskier than raising one, so clearance
+        # (partial or full) is accepted only from an official source or when
+        # confirmed by multiple channels with combined confidence >= MIN_CONFIDENCE.
         def accepted(votes: list[ParsedEvent]) -> bool:
             return is_official(votes[-1].source) or combined_confidence(votes) >= min_conf
 
-        support: dict[str, list[ParsedEvent]] = {}      # угроза -> подтверждающие события
-        clear_votes: dict[str, list[ParsedEvent]] = {}  # угроза -> сообщения о её снятии
-        full_clear_votes: list[ParsedEvent] = []        # сообщения о полном отбое
-        untyped: list[ParsedEvent] = []                 # тревога без указания типа угрозы
+        support: dict[str, list[ParsedEvent]] = {}      # threat -> confirming events
+        clear_votes: dict[str, list[ParsedEvent]] = {}  # threat -> clearance votes
+        full_clear_votes: list[ParsedEvent] = []        # full all-clear votes
+        untyped: list[ParsedEvent] = []                 # alerts without a specific threat type
         cleared: set[str] = set()
         last_reset = -1
 
@@ -73,7 +72,7 @@ class Aggregator:
                     last_reset = i
                 continue
 
-            # Частичное снятие ("ракети минули, БпЛА лишаються")
+            # Partial threat clearance ("missiles cleared, UAVs remain")
             for t in ev.cleared_threats:
                 if t not in support:
                     continue
@@ -83,10 +82,10 @@ class Aggregator:
                     support.pop(t)
                     clear_votes.pop(t)
                     cleared.add(t)
-                    # старые "🔴/🟡 без типа" устарели; официальная тревога (ALERT) остаётся
+                    # Drop stale untyped color markers; keep generic official ALERT status
                     untyped = [u for u in untyped if u.level is AlertLevel.ALERT]
 
-            # Новая информация об угрозе отменяет незавершённые голоса за отбой
+            # Any new threat report invalidates pending unconfirmed all-clear votes
             if ev.threats or ev.level is not AlertLevel.NONE:
                 full_clear_votes = []
             for t in ev.threats:
@@ -97,7 +96,7 @@ class Aggregator:
             if not ev.threats and not ev.cleared_threats and ev.level is not AlertLevel.NONE:
                 untyped.append(ev)
 
-        # Всё до последнего принятого отбоя больше не нужно
+        # Prune history prior to the latest accepted full all-clear
         if last_reset >= 0:
             evs = evs[last_reset + 1:]
         self._events[district] = evs
@@ -114,14 +113,14 @@ class Aggregator:
 
         conf = combined_confidence(active)
         cfg = threats_cfg()["threats"]
-        # Сначала ракетные (red), потом БпЛА; внутри — по числу подтверждений
+        # Order red (missile) threats first, then yellow (UAV), then by confirmation count
         threat_list = sorted(
             support,
             key=lambda t: (-_LEVEL_RANK[AlertLevel(cfg[t]["level"])], -len(support[t])),
         )
 
-        # Цвет НЕ понижаем при низком доверии (жёлтый = БпЛА, это другой смысл),
-        # а помечаем ситуацию как неподтверждённую.
+        # Do not downgrade alert color on low confidence (yellow means UAV, not "unconfirmed");
+        # instead mark the situation as unconfirmed via the `confirmed` flag.
         return Situation(
             district=district,
             level=level,
@@ -131,7 +130,6 @@ class Aggregator:
             confidence=round(conf, 2),
             confirmed=conf >= min_conf,
             sources=sorted({e.source for e in active}),
-            # время последней информации по району (включая частичные снятия)
             updated_at=evs[-1].timestamp,
         )
 

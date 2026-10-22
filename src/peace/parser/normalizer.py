@@ -1,4 +1,4 @@
-"""Приведение текста к единому виду перед разбором."""
+"""Text normalization before parsing."""
 from __future__ import annotations
 
 import re
@@ -8,9 +8,9 @@ _SPACES = re.compile(r"\s+")
 
 
 def normalize(text: str) -> str:
-    """Нижний регистр, единый апостроф, ё->е, схлопывание пробелов.
+    """Lowercases text, standardizes apostrophes and 'ё', and collapses whitespace.
 
-    Эмодзи НЕ удаляем — 🔴/🟡/🟢 используются как маркеры уровня.
+    Emojis are preserved because 🔴/🟡/🟢 are used as fallback markers.
     """
     t = text.lower()
     t = _APOSTROPHES.sub("'", t)

@@ -1,7 +1,7 @@
-"""Чтение каналов через пользовательский аккаунт (Telethon / MTProto).
+"""Reads Telegram channels using a user account (Telethon / MTProto).
 
-Bot API не умеет читать чужие каналы, поэтому нужен userbot.
-Аккаунт должен быть подписан на все каналы из channels.yaml.
+Standard Bot API cannot read third-party channels, so a userbot is required.
+The account must have joined or be able to view all channels in channels.yaml.
 """
 from __future__ import annotations
 
@@ -23,11 +23,11 @@ async def run_listener(queue: asyncio.Queue[RawMessage]) -> None:
 
     Path(cfg.tg_session_name).parent.mkdir(parents=True, exist_ok=True)
     client = TelegramClient(cfg.tg_session_name, cfg.tg_api_id, cfg.tg_api_hash)
-    # Не используем client.start(): под systemd некому вводить телефон и код.
+    # Do not call client.start() here: under systemd there is no interactive stdin for phone/code.
     await client.connect()
     if not await client.is_user_authorized():
         raise RuntimeError(
-            "Userbot не авторизован. Один раз выполните: PYTHONPATH=src .venv/bin/python -m peace.login"
+            "Userbot is not authorized. Run once: PYTHONPATH=src .venv/bin/python -m peace.login"
         )
 
     async def _push(event, edited: bool) -> None:
@@ -46,7 +46,7 @@ async def run_listener(queue: asyncio.Queue[RawMessage]) -> None:
     async def on_new(event):
         await _push(event, edited=False)
 
-    # Каналы часто правят сообщения ("UPD: цель сбита" и т.п.)
+    # Channels frequently edit posts ("UPD: target intercepted", etc.)
     @client.on(events.MessageEdited(chats=usernames))
     async def on_edit(event):
         await _push(event, edited=True)

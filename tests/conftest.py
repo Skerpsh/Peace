@@ -1,4 +1,4 @@
-"""Общие настройки тестов: фиктивные переменные окружения и фиксированные каналы."""
+"""Shared test fixtures: dummy environment variables and fixed channel list."""
 import os
 
 import pytest
@@ -18,5 +18,5 @@ TEST_CHANNELS = [
 
 @pytest.fixture(autouse=True)
 def _fixed_channels(monkeypatch):
-    # Тесты не зависят от реального config/channels.yaml
+    # Decouple tests from real config/channels.yaml
     monkeypatch.setattr("peace.analyzer.scoring.channels", lambda: TEST_CHANNELS)
