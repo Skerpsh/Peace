@@ -4,9 +4,9 @@
 # (если изменился requirements.txt), гоняет тесты и перезапускает сервис.
 # Если тесты упали или бот не поднялся — автоматический откат на прошлую версию.
 #
-#   bash deploy/update.sh [branch]       # обычно вызывается из ./deploy.sh
-#   FORCE=1 bash deploy/update.sh        # перезапустить, даже если код не менялся
-#   SKIP_TESTS=1 bash deploy/update.sh   # без тестов (не рекомендуется)
+#   ./deploy.sh                          # основной способ запуска на VPS
+#   FORCE=1 ./deploy.sh                  # перезапустить, даже если код не менялся
+#   SKIP_TESTS=1 ./deploy.sh             # без тестов (не рекомендуется)
 # =============================================================================
 set -euo pipefail
 
@@ -16,6 +16,8 @@ main() {
     cd "$(dirname "$0")/.."
     local SERVICE="peace-bot"
     local BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
+    local SUDO=""
+    [ "$(id -u)" -eq 0 ] || SUDO="sudo"
 
     say()  { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
     ok()   { printf '\033[1;32m✔ %s\033[0m\n' "$*"; }
@@ -28,26 +30,25 @@ main() {
 
     local PREV NEW
     PREV="$(git rev-parse HEAD)"
-    say "Получение изменений ($BRANCH)"
+    say "Получение изменений из GitHub ($BRANCH)"
     git fetch -q origin "$BRANCH"
     NEW="$(git rev-parse "origin/$BRANCH")"
 
     if [ "$PREV" = "$NEW" ] && [ "${FORCE:-0}" != "1" ]; then
-        ok "Уже актуальная версия: $(git log -1 --format='%h %s')"
-        return 0
-    fi
-
-    # .env, data/ (сессия, БД) и .venv в .gitignore — reset их не трогает
-    git reset -q --hard "$NEW"
-    if [ "$PREV" != "$NEW" ]; then
-        echo "Новые коммиты:"
-        git log --format='  %h %s (%an)' "$PREV..$NEW"
+        ok "Код уже на самой свежей версии: $(git log -1 --format='%h %s')"
+    else
+        # .env, data/ (сессия, БД) и .venv в .gitignore — reset их не трогает
+        git reset -q --hard "$NEW"
+        if [ "$PREV" != "$NEW" ]; then
+            echo "Новые коммиты:"
+            git log --format='  %h %s (%an)' "$PREV..$NEW"
+        fi
     fi
 
     local DEPS_CHANGED=0
     if ! git diff --quiet "$PREV" "$NEW" -- requirements.txt || [ ! -x .venv/bin/python ]; then
         DEPS_CHANGED=1
-        say "requirements.txt изменился — установка зависимостей"
+        say "Установка/обновление зависимостей Python"
         install_deps
     fi
 
@@ -56,13 +57,13 @@ main() {
         git reset -q --hard "$PREV"
         [ "$DEPS_CHANGED" = "1" ] && install_deps
         if [ "${RESTARTED:-0}" = "1" ]; then
-            sudo systemctl restart "$SERVICE" || true
+            $SUDO systemctl restart "$SERVICE" || true
         fi
         exit 1
     }
 
     if [ "${SKIP_TESTS:-0}" != "1" ]; then
-        say "Тесты"
+        say "Проверка тестами"
         PYTHONPATH=src .venv/bin/python -m pytest -q -p no:cacheprovider || rollback "Тесты не прошли"
     fi
 
@@ -71,14 +72,22 @@ main() {
     SESSION="$(grep -E '^TG_SESSION_NAME=' .env 2>/dev/null | cut -d= -f2- || true)"
     SESSION="${SESSION:-data/peace_userbot}.session"
     if [ ! -f .env ] || [ ! -f "$SESSION" ]; then
-        fail "Нет .env или $SESSION — код обновлён, но сервис не перезапущен."
-        echo "  Заполните .env и выполните: PYTHONPATH=src .venv/bin/python -m peace.login"
+        fail "Ещё не заполнены ключи (.env) или нет сессии ($SESSION) — код обновлён, сервис пока не запущен."
+        echo "  1) Заполните .env:  nano .env"
+        echo "  2) Авторизуйте userbot:  ./deploy.sh login"
+        echo "  3) Запустите бота:  ./deploy.sh restart"
+        return 0
+    fi
+
+    # Если код не менялся и сервис уже активен (и не задан FORCE=1) — рестарт не нужен
+    if [ "$PREV" = "$NEW" ] && [ "${FORCE:-0}" != "1" ] && systemctl is-active --quiet "$SERVICE"; then
+        ok "Сервис $SERVICE работает."
         return 0
     fi
 
     say "Перезапуск $SERVICE"
-    sudo systemctl reset-failed "$SERVICE" 2>/dev/null || true
-    sudo systemctl restart "$SERVICE"
+    $SUDO systemctl reset-failed "$SERVICE" 2>/dev/null || true
+    $SUDO systemctl restart "$SERVICE"
     RESTARTED=1
 
     # Ждём, чтобы поймать падение при старте (Restart=always перезапускает тихо)
@@ -90,7 +99,7 @@ main() {
         rollback "Бот не запустился"
     fi
 
-    ok "Задеплоено: $(git log -1 --format='%h %s')"
+    ok "Обновлено и запущено: $(git log -1 --format='%h %s')"
     journalctl -u "$SERVICE" -n 10 --no-pager 2>/dev/null || true
 }
 

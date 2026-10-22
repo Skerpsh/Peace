@@ -1,41 +1,87 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Деплой одной командой с локальной машины:
+# Универсальный скрипт деплоя и управления ботом.
 #
-#   ./deploy.sh            push + обновление на VPS (тесты, рестарт, автооткат)
-#   ./deploy.sh status     статус сервиса
-#   ./deploy.sh logs       логи в реальном времени (Ctrl+C — выход)
-#   ./deploy.sh restart    перезапуск без обновления кода
-#   ./deploy.sh ssh        зайти на VPS в папку проекта
+# Работает в двух режимах:
+#   1) ПРЯМО НА VPS (в папке /opt/Peace, без deploy/deploy.env):
+#        ./deploy.sh            подтянуть код с GitHub, прогнать тесты и перезапустить
+#        ./deploy.sh setup      первичная установка (venv, .env, systemd-сервис)
+#        ./deploy.sh login      одноразовый вход в Telegram userbot-аккаунт
+#        ./deploy.sh status     статус сервиса peace-bot
+#        ./deploy.sh logs       логи бота в реальном времени (Ctrl+C — выход)
+#        ./deploy.sh restart    перезапуск сервиса
 #
-# Настройки — в deploy/deploy.env (шаблон: deploy/deploy.env.example).
+#   2) С ЛОКАЛЬНОГО ПК ПО SSH (если заполнен deploy/deploy.env с реальным VPS_HOST):
+#        ./deploy.sh            git push + обновление на VPS по SSH
+#        ./deploy.sh status|logs|restart|ssh
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
 
+SERVICE="peace-bot"
 CONF="deploy/deploy.env"
-if [ ! -f "$CONF" ]; then
-    echo "Нет $CONF. Создайте его:  cp deploy/deploy.env.example $CONF  и заполните."
-    exit 1
+VPS_HOST=""
+
+if [ -f "$CONF" ]; then
+    # shellcheck source=/dev/null
+    source "$CONF"
 fi
-# shellcheck source=/dev/null
-source "$CONF"
-: "${VPS_HOST:?VPS_HOST не задан в $CONF}"
+
+# Если deploy.env не создан или там остался шаблон 1.2.3.4 — работаем локально на этом сервере
+if [ -z "${VPS_HOST:-}" ] || [ "$VPS_HOST" = "1.2.3.4" ]; then
+    SUDO=""
+    [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+    BRANCH="${BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+
+    case "${1:-deploy}" in
+        setup)
+            bash deploy/setup_vps.sh
+            ;;
+        login)
+            PYTHONPATH=src .venv/bin/python -m peace.login
+            ;;
+        status)
+            systemctl status "$SERVICE" --no-pager
+            ;;
+        logs)
+            journalctl -u "$SERVICE" -f -n 50
+            ;;
+        restart)
+            $SUDO systemctl restart "$SERVICE"
+            sleep 3
+            systemctl status "$SERVICE" --no-pager
+            ;;
+        deploy|update)
+            # Если сервис ещё ни разу не ставился — сначала первичная настройка
+            if [ ! -f "/etc/systemd/system/$SERVICE.service" ]; then
+                echo "==> Первичный запуск: настраиваю окружение и systemd-сервис..."
+                bash deploy/setup_vps.sh
+            fi
+            bash deploy/update.sh "$BRANCH"
+            ;;
+        *)
+            sed -n '6,12p' "$0"
+            exit 1
+            ;;
+    esac
+    exit 0
+fi
+
+# --- Режим удалённого деплоя с локального ПК по SSH --------------------------
 VPS_USER="${VPS_USER:-$USER}"
 VPS_PORT="${VPS_PORT:-22}"
-VPS_DIR="${VPS_DIR:-Project_PEACE}"
+VPS_DIR="${VPS_DIR:-/opt/Peace}"
 BRANCH="${BRANCH:-main}"
-SERVICE="peace-bot"
 
-remote() { ssh -p "$VPS_PORT" "$@" "$VPS_USER@$VPS_HOST"; }
+remote_tty() { ssh -t -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "$@"; }
+remote_cmd() { ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "$@"; }
 
 case "${1:-deploy}" in
-    status)  remote -t -- "systemctl status $SERVICE --no-pager" ;;
-    logs)    remote -t -- "journalctl -u $SERVICE -f -n 50" ;;
-    restart) remote -t -- "sudo systemctl restart $SERVICE && sleep 3 && systemctl status $SERVICE --no-pager" ;;
-    ssh)     remote -t -- "cd $VPS_DIR && exec \$SHELL -l" ;;
-    deploy)
-        # Незакоммиченные изменения на сервер НЕ попадут — предупредим
+    status)  remote_tty "systemctl status $SERVICE --no-pager" ;;
+    logs)    remote_tty "journalctl -u $SERVICE -f -n 50" ;;
+    restart) remote_tty "sudo systemctl restart $SERVICE && sleep 3 && systemctl status $SERVICE --no-pager" ;;
+    ssh)     remote_tty "cd $VPS_DIR && exec \$SHELL -l" ;;
+    deploy|update)
         if [ -n "$(git status --porcelain)" ]; then
             echo "⚠ Есть незакоммиченные изменения (на сервер не попадут):"
             git status --short
@@ -53,9 +99,11 @@ case "${1:-deploy}" in
         echo "==> git push origin $BRANCH"
         git push origin "$BRANCH"
 
-        echo "==> Обновление на $VPS_USER@$VPS_HOST"
-        remote -- "cd $VPS_DIR && bash deploy/update.sh $BRANCH"
+        echo "==> Обновление на $VPS_USER@$VPS_HOST ($VPS_DIR)"
+        remote_cmd "cd $VPS_DIR && bash deploy/update.sh $BRANCH"
         ;;
     *)
-        sed -n '3,10p' "$0"; exit 1 ;;
+        sed -n '14,16p' "$0"
+        exit 1
+        ;;
 esac
