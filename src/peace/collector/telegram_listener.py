@@ -19,7 +19,11 @@ log = logging.getLogger(__name__)
 
 async def run_listener(queue: asyncio.Queue[RawMessage]) -> None:
     cfg = settings()
-    usernames = [c["username"] for c in channels()]
+    raw_usernames = [
+        c["username"].lstrip("@")
+        for c in channels()
+        if c.get("username") and not str(c["username"]).upper().startswith("CHANGE_ME")
+    ]
 
     Path(cfg.tg_session_name).parent.mkdir(parents=True, exist_ok=True)
     client = TelegramClient(cfg.tg_session_name, cfg.tg_api_id, cfg.tg_api_hash)
@@ -29,6 +33,21 @@ async def run_listener(queue: asyncio.Queue[RawMessage]) -> None:
         raise RuntimeError(
             "Userbot is not authorized. Run once: PYTHONPATH=src .venv/bin/python -m peace.login"
         )
+
+    valid_chats = []
+    valid_names = []
+    for uname in raw_usernames:
+        try:
+            entity = await client.get_input_entity(uname)
+            valid_chats.append(entity)
+            valid_names.append(uname)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Skipping unresolved channel '%s': %s", uname, e)
+
+    if not valid_chats:
+        log.warning("No valid channels resolved from config/channels.yaml; listener is idle")
+        await client.run_until_disconnected()
+        return
 
     async def _push(event, edited: bool) -> None:
         chat = await event.get_chat()
@@ -42,14 +61,14 @@ async def run_listener(queue: asyncio.Queue[RawMessage]) -> None:
         if msg.text.strip():
             await queue.put(msg)
 
-    @client.on(events.NewMessage(chats=usernames))
+    @client.on(events.NewMessage(chats=valid_chats))
     async def on_new(event):
         await _push(event, edited=False)
 
     # Channels frequently edit posts ("UPD: target intercepted", etc.)
-    @client.on(events.MessageEdited(chats=usernames))
+    @client.on(events.MessageEdited(chats=valid_chats))
     async def on_edit(event):
         await _push(event, edited=True)
 
-    log.info("Listening to %d channels: %s", len(usernames), usernames)
+    log.info("Listening to %d channels: %s", len(valid_names), valid_names)
     await client.run_until_disconnected()
