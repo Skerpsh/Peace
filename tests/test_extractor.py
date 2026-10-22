@@ -70,3 +70,15 @@ def test_partial_clear_only():
 
 def test_irrelevant_region_ignored():
     assert extract(_msg("🔴 Тривога у Харківській області")) is None
+
+
+def test_local_channel_default_district():
+    msg = RawMessage(source="bycanskyy", message_id=2, text="Повітряна тривога! Група БпЛА", date=datetime.now(timezone.utc))
+    ev = extract(msg)
+    assert ev is not None
+    assert ev.districts == ["buchanskyi"]
+    assert ev.level is AlertLevel.YELLOW
+
+    # But if a local channel posts about another region (e.g. Kharkiv), ignore it
+    other = RawMessage(source="kievinfo_kyiv", message_id=3, text="🔴 Тривога у Харківській області", date=datetime.now(timezone.utc))
+    assert extract(other) is None

@@ -3,19 +3,35 @@ from __future__ import annotations
 
 import re
 
-from peace.config import regions, threats
+from peace.config import channels, regions, threats
 from peace.models import AlertLevel, ParsedEvent, RawMessage
 from peace.parser.normalizer import normalize
 
+# Non-Kyiv oblast/city roots so local Kyiv/Bucha channels don't misattribute national news
+_OTHER_REGIONS = (
+    "харків", "харьков", "одес", "львів", "львов", "дніпропетров", "днепропетров",
+    "запоріж", "запорож", "полтав", "миколаїв", "николаев", "херсон", "вінниц", "винниц",
+)
 
-def _find_districts(text: str) -> list[str]:
+
+def _channel_default_district(source: str, text: str) -> list[str]:
+    if any(r in text for r in _OTHER_REGIONS):
+        return []
+    for c in channels():
+        if c["username"].lower() == source.lower() and c.get("default_district"):
+            return [c["default_district"]]
+    return []
+
+
+def _find_districts(text: str, source: str = "") -> list[str]:
     found = [
         key for key, info in regions().items()
         if any(alias in text for alias in info["aliases"])
     ]
     # If a specific district is matched, drop the generic city/oblast key
     specific = [k for k in found if not k.endswith("_all")]
-    return specific or found
+    result = specific or found
+    return result or _channel_default_district(source, text)
 
 
 def _dedup_missile(found: list[str]) -> list[str]:
@@ -110,7 +126,7 @@ def _find_direction(text: str) -> str | None:
 def extract(msg: RawMessage) -> ParsedEvent | None:
     """Returns None if the message does not relate to Kyiv/Kyiv Oblast or carries no alert info."""
     text = normalize(msg.text)
-    districts = _find_districts(text)
+    districts = _find_districts(text, msg.source)
     if not districts:
         return None
 
