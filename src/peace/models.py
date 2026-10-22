@@ -21,6 +21,7 @@ class RawMessage:
     text: str
     date: datetime
     edited: bool = False
+    preload: bool = False           # True for recent history loaded at startup (no push notification)
 
 
 @dataclass(slots=True)
@@ -37,6 +38,7 @@ class ParsedEvent:
     # Threat types cleared without a full all-clear
     # (e.g. "missile threat cleared, UAVs remain" -> ["missile", ...])
     cleared_threats: list[str] = field(default_factory=list)
+    preload: bool = False           # True when replaying startup history (updates /status silently)
 
 
 @dataclass(slots=True)

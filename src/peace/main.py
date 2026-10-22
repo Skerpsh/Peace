@@ -29,7 +29,22 @@ async def pipeline(
         raw = await raw_q.get()
         ev = extract(raw)
         if ev:
+            ev.preload = raw.preload
+            log.info(
+                "Matched [%s#%s]%s -> districts=%s level=%s threats=%s cleared=%s all_clear=%s",
+                ev.source,
+                ev.message_id,
+                " (preload)" if ev.preload else "",
+                ev.districts,
+                ev.level.value,
+                ev.threats,
+                ev.cleared_threats,
+                ev.is_all_clear,
+            )
             await event_q.put(ev)
+        else:
+            preview = raw.text.replace("\n", " ")[:90]
+            log.info("Ignored [%s#%s]: %s", raw.source, raw.message_id, preview)
 
 
 async def analyzer_loop(
@@ -39,9 +54,15 @@ async def analyzer_loop(
     while True:
         ev = await event_q.get()
         await db.log_event(ev)
-        for situation in agg.add(ev):
+        changes = agg.add(ev)
+        if ev.preload:
+            continue
+        for situation in changes:
             text = format_situation(situation)
-            for chat_id in await db.subscribers_for(situation.district):
+            subs = await db.subscribers_for(situation.district)
+            log.info("Broadcasting update for %s (%s) to %d subscribers",
+                     situation.district, situation.level.value, len(subs))
+            for chat_id in subs:
                 try:
                     await bot.send_message(chat_id, text)
                 except Exception as e:  # noqa: BLE001

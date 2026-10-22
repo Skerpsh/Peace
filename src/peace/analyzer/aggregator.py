@@ -139,6 +139,7 @@ class Aggregator:
             return new.level is not AlertLevel.NONE
         return (
             old.level != new.level
+            or old.confirmed != new.confirmed
             or set(old.threats) != set(new.threats)
             or old.direction != new.direction
         )

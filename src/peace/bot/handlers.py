@@ -22,7 +22,8 @@ def build_router(db: Database, aggregator: Aggregator) -> Router:
             "/status — current situation\n"
             "/districts — list available districts\n"
             "/subscribe &lt;district&gt; — subscribe to a specific district only\n"
-            "/stop — unsubscribe from alerts"
+            "/stop — unsubscribe from alerts\n\n"
+            + format_snapshot(aggregator.snapshot())
         )
 
     @router.message(Command("status"))

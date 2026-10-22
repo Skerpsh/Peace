@@ -1,6 +1,6 @@
 # Threat types: keyword roots (lowercase) and corresponding alert levels.
 # Kyiv alert mechanics:
-#   yellow — UAV threat (Shahed, reconnaissance drones)
+#   yellow — UAV threat (Shahed, reconnaissance/jet drones)
 #   red    — Missile threat (cruise, ballistic, MiG-31K / Kinzhal)
 # If both missiles and UAVs are active, the level is red and all active targets are listed.
 #
@@ -22,29 +22,75 @@ threats:
     words: ["авіаці", "авиаци", "ту-95", "ту-22", "міг-31", "миг-31", "mig-31", "tu-95", "tu-22", "aviation"]
   shahed:
     level: yellow
-    words: ["шахед", "шахід", "бпла", "мопед", "дрон", "герань", "shahed", "uav", "drone"]
+    words: ["шахед", "шахід", "бпла", "рбпла", "мопед", "дрон", "геран", "shahed", "uav", "drone"]
 
 markers:
   # Alert start without a specific threat type
-  alert:  ["повітряна тривога", "воздушная тревога", "тривога", "тревога", "загроза", "угроза", "в укриття", "в укрытие", "air alert", "take cover"]
-  # Color emojis used only as fallback when no threat type is found in the text
-  red:    ["🔴"]
-  yellow: ["🟡"]
+  alert:  ["повітряна тривога", "воздушная тревога", "тривога", "тревога", "загроза", "угроза", "небезпека",
+           "в укриття", "в укрытие", "air alert", "take cover"]
+  # Explicit level phrases (bare 🔴 is used by some channels as a generic siren icon, so red requires an explicit phrase or missile threat)
+  red:    ["червоний рівень", "червона тривога", "ракетна небезпека", "ракетну загрозу"]
+  yellow: ["жовтий рівень", "жовта тривога", "дронова небезпека", "дронову загрозу", "🟡"]
   # Threat clearance markers. If a clause with a clear marker mentions a threat type,
   # only that threat type is cleared ("missile threat cleared, UAVs remain" -> red -> yellow).
   # If no threat type is mentioned, it is treated as a full all-clear ("all clear").
-  clear:  ["🟢", "відбій", "отбой", "минул", "минувал", "миновал", "знято", "знята", "снят",
-           "відсутн", "отсутств", "приземл", "посадк", "all clear", "cleared"]
+  clear:  ["🟢", "✅ ✅ ✅", "відбій", "отбой", "минул", "минувал", "миновал", "знято", "знята", "снят",
+           "відсутн", "отсутств", "приземл", "посадк", "без загроз", "локаційно чисто",
+           "all clear", "cleared"]
+  # Target movement phrases in monitoring channels (imply UAV/target tracking when a district is present)
+  movement: ["курсом на", "курс на", "тримає курс", "йде на", "летить", "суне", "у ваш бік",
+             "у бік", "в бік", "маневрує", "шастає", "висота ", "над вами"]
+
+# Non-alert news/utility phrases to ignore (power outages, bridge/metro traffic, daily digests, aftermath)
+ignore_phrases:
+  - "графіки відключень"
+  - "графік відключень"
+  - "відключення додалися"
+  - "дтек"
+  - "рух поїздів"
+  - "рух транспорту"
+  - "південним мостом"
+  - "головне за день"
+  - "внаслідок атаки"
+  - "вибуховою хвилею"
+  - "пошкоджен"
+  - "обійшлося без жертв"
+  - "прилетала"
+  - "прилетіла"
+  - "за словами експерта"
+  - "рф атакувала україну"
+  - "збили насмерть"
+  - "середньодобова температура"
+
+# Channel signature / promo lines stripped before parsing
+strip_line_markers:
+  - "підписатися"
+  - "підписатись"
+  - "надіслати новину"
+  - "надіслати матеріал"
+  - "детальний радар"
+  - "детальний рух"
+  - "спеціалізованому каналі"
+  - "бучанський інсайдер"
+  - "київ інфо"
+  - "стежити"
 
 # Clause delimiters within a message (regex). Clear markers apply only to their own clause.
 clause_split: "[.,;!?\\n]+|\\s(?:але|но|однак|проте|однако|but|however)\\s"
 
 # Target movement direction patterns (regex, group 1 = destination)
 direction_patterns:
-  - "курсом на ([\\w'\\- ]+)"
-  - "в напрямку ([\\w'\\- ]+)"
-  - "в направлении ([\\w'\\- ]+)"
-  - "рухається на ([\\w'\\- ]+)"
-  - "движется на ([\\w'\\- ]+)"
-  - "heading towards ([\\w'\\- ]+)"
-  - "towards ([\\w'\\- ]+)"
+  - "курсом на ([\\w'\\-\\\\ ]+)"
+  - "курс на ([\\w'\\-\\\\ ]+)"
+  - "в напрямку ([\\w'\\-\\\\ ]+)"
+  - "у напрямку ([\\w'\\-\\\\ ]+)"
+  - "в направлении ([\\w'\\-\\\\ ]+)"
+  - "рухається на ([\\w'\\-\\\\ ]+)"
+  - "движется на ([\\w'\\-\\\\ ]+)"
+  - "летить на ([\\w'\\-\\\\ ]+)"
+  - "йде на ([\\w'\\-\\\\ ]+)"
+  - "на ([\\w'\\-\\\\ ]+) летить"
+  - "у бік ([\\w'\\-\\\\ ]+)"
+  - "в бік ([\\w'\\-\\\\ ]+)"
+  - "heading towards ([\\w'\\-\\\\ ]+)"
+  - "towards ([\\w'\\-\\\\ ]+)"
