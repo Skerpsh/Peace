@@ -1,0 +1,20 @@
+# Каналы-источники.
+# weight — базовое доверие к источнику (0..1). Официальные — выше, мониторинговые — ниже.
+# official: true — источник может САМ объявлять тревогу/отбой.
+# ВНИМАНИЕ: юзернеймы ниже — примеры, их нужно проверить и заменить на нужные вам.
+channels:
+  - username: kpszsu          # Повітряні сили ЗСУ (официальный)
+    weight: 1.0
+    official: true
+  - username: VA_Kyiv         # Київська міська військова адміністрація (проверить username)
+    weight: 0.95
+    official: true
+  - username: CHANGE_ME_1     # мониторинговый канал #1
+    weight: 0.7
+    official: false
+  - username: CHANGE_ME_2     # мониторинговый канал #2
+    weight: 0.6
+    official: false
+  - username: CHANGE_ME_3     # мониторинговый канал #3
+    weight: 0.6
+    official: false
