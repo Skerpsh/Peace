@@ -17,6 +17,7 @@
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
+infocmp >/dev/null 2>&1 || export TERM=xterm-256color
 
 SERVICE="peace-bot"
 CONF="deploy/deploy.env"

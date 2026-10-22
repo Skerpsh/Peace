@@ -41,7 +41,7 @@ main() {
         git reset -q --hard "$NEW"
         if [ "$PREV" != "$NEW" ]; then
             echo "New commits:"
-            git log --format='  %h %s (%an)' "$PREV..$NEW"
+            git --no-pager log --format='  %h %s (%an)' "$PREV..$NEW"
         fi
     fi
 
