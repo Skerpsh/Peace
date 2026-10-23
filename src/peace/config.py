@@ -14,13 +14,13 @@ CONFIG_DIR = ROOT / "config"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ROOT / ".env", extra="ignore")
 
-    tg_api_id: int
-    tg_api_hash: str
+    tg_api_id: int = 0
+    tg_api_hash: str = ""
     tg_session_name: str = "data/peace_userbot"
     bot_token: str
     alerts_api_token: str = ""
     db_path: str = "data/peace.db"
-    # Threats do not expire; after this many minutes without updates, a staleness notice is shown
+    # Threats do not expire early; after this many minutes without updates, a staleness notice is shown
     stale_after_minutes: int = 30
     min_confidence: float = 0.6
 

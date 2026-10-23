@@ -67,15 +67,13 @@ main() {
         PYTHONPATH=src .venv/bin/python -m pytest -q -p no:cacheprovider || rollback "Test suite failed"
     fi
 
-    # Initial deploy check: skip service restart if .env or userbot session is missing
-    local SESSION
-    SESSION="$(grep -E '^TG_SESSION_NAME=' .env 2>/dev/null | cut -d= -f2- || true)"
-    SESSION="${SESSION:-data/peace_userbot}.session"
-    if [ ! -f .env ] || [ ! -f "$SESSION" ]; then
-        fail "Missing .env or userbot session ($SESSION) — code updated, service not started yet."
-        echo "  1) Configure credentials:  nano .env"
-        echo "  2) Log in to userbot:      ./deploy.sh login"
-        echo "  3) Start service:          ./deploy.sh restart"
+    # Initial deploy check: only BOT_TOKEN in .env is required to start the service
+    local BOT_TOKEN_VAL
+    BOT_TOKEN_VAL="$(grep -E '^BOT_TOKEN=' .env 2>/dev/null | cut -d= -f2- || true)"
+    if [ ! -f .env ] || [ -z "$BOT_TOKEN_VAL" ] || [[ "$BOT_TOKEN_VAL" == *"your-bot-token"* ]]; then
+        fail "Missing or placeholder BOT_TOKEN in .env — code updated, service not started yet."
+        echo "  1) Configure BOT_TOKEN in .env:  nano .env"
+        echo "  2) Start service:                ./deploy.sh restart"
         return 0
     fi
 

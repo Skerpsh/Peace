@@ -7,15 +7,18 @@ from peace.config import channels, regions, threats
 from peace.models import AlertLevel, ParsedEvent, RawMessage
 from peace.parser.normalizer import normalize
 
-# Non-Kyiv oblast/city roots so local Kyiv/Bucha channels don't misattribute national news
+# Non-Kyiv oblast/city roots so national news or other regions are not misattributed to Kyiv
 _OTHER_REGIONS = (
-    "харків", "харьков", "одес", "львів", "львов", "дніпропетров", "днепропетров",
-    "запоріж", "запорож", "полтав", "миколаїв", "николаев", "херсон", "вінниц", "винниц",
-    "рівнен", "ровен", "волин", "закарпат", "терноп", "буковин", "чернівц",
+    "харків", "харьков", "одес", "одещин", "львів", "львов", "дніпропетров", "днепропетров",
+    "запоріж", "запорож", "полтав", "миколаїв", "николаев", "херсон", "вінниц", "винниц", "віннич",
+    "рівнен", "ровен", "волин", "закарпат", "терноп", "буковин", "чернівц", "донеччин", "донецьк",
+    "луган", "сумщин", "суми", "кіровоград", "хмельниц", "франків",
 )
 
 # Prevents "київська" / "київщина" from matching kyiv_all ("київ")
 _OBLAST_ADJ_RE = re.compile(r"ки(?:їв|єв|ев)(?:ськ|ск|щин)\w*")
+# Prevents "Подільському районі Одещини" from matching Kyiv's Podilskyi District
+_ODESA_PODIL_RE = re.compile(r"подільськ\w+\s+район\w*\s+одещин\w*")
 
 
 def _clean_lines(raw_text: str) -> str:
@@ -44,12 +47,13 @@ def _channel_default_district(source: str, text: str) -> list[str]:
     return []
 
 
-def _find_districts(text: str, source: str = "") -> list[str]:
+def _find_districts(text: str, source: str = "", allow_default: bool = True) -> list[str]:
     reg = regions()
-    text_for_city = _OBLAST_ADJ_RE.sub(" ", text)
+    cleaned = _ODESA_PODIL_RE.sub(" ", text)
+    text_for_city = _OBLAST_ADJ_RE.sub(" ", cleaned)
     found = []
     for key, info in reg.items():
-        haystack = text_for_city if key == "kyiv_all" else text
+        haystack = text_for_city if key == "kyiv_all" else cleaned
         if any(alias in haystack for alias in info["aliases"]):
             found.append(key)
 
@@ -62,7 +66,9 @@ def _find_districts(text: str, source: str = "") -> list[str]:
         if not (k == "kyiv_all" and has_city_specific)
         and not (k == "oblast_all" and has_oblast_specific)
     ]
-    return filtered or _channel_default_district(source, text)
+    if filtered:
+        return filtered
+    return _channel_default_district(source, cleaned) if allow_default else []
 
 
 def _dedup_missile(found: list[str]) -> list[str]:
@@ -171,13 +177,21 @@ def extract(msg: RawMessage) -> ParsedEvent | None:
     active, cleared, bare_clear, active_text, clear_clauses = _analyze_clauses(text)
     full_clear = bare_clear and not active and not cleared
 
+    mk = threats()["markers"]
+    has_explicit_signal = (
+        full_clear
+        or bool(cleared)
+        or _fallback_level(active_text) is not AlertLevel.NONE
+        or _has_any(active_text, mk.get("movement", []))
+    )
+
     # When a message clears one district while noting another remains under alert
     # (e.g. "Київ та область — відбій! Вишгород тривога залишається"),
     # resolve districts for full_clear from the clear clause itself.
     if full_clear and clear_clauses and _fallback_level(active_text) is not AlertLevel.NONE:
-        districts = _find_districts(" ".join(clear_clauses), msg.source)
+        districts = _find_districts(" ".join(clear_clauses), msg.source, allow_default=True)
     else:
-        districts = _find_districts(text, msg.source)
+        districts = _find_districts(text, msg.source, allow_default=has_explicit_signal)
     if not districts:
         return None
 

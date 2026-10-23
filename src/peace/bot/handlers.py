@@ -28,6 +28,7 @@ def build_router(db: Database, aggregator: Aggregator) -> Router:
 
     @router.message(Command("status"))
     async def status(m: Message) -> None:
+        await db.subscribe(m.chat.id, "*")
         await m.answer(format_snapshot(aggregator.snapshot()))
 
     @router.message(Command("districts"))
@@ -49,5 +50,11 @@ def build_router(db: Database, aggregator: Aggregator) -> Router:
     async def stop(m: Message) -> None:
         await db.unsubscribe(m.chat.id)
         await m.answer("You have unsubscribed. Send /start to subscribe again.")
+
+    @router.message()
+    async def fallback(m: Message) -> None:
+        # Automatically subscribe any user who messages the bot and return the current status
+        await db.subscribe(m.chat.id, "*")
+        await m.answer(format_snapshot(aggregator.snapshot()))
 
     return router

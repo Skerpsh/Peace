@@ -1,70 +1,90 @@
-"""Reads Telegram channels using a user account (Telethon / MTProto).
+"""Reads Telegram channels in real time.
 
-Combines three mechanisms so no channel message is ever missed:
-1. Joins target channels via JoinChannelRequest so MTProto real-time push works.
-2. Preloads recent messages (last 2 hours) on startup to populate initial /status state.
-3. Runs a 10-second get_messages(min_id=...) polling loop alongside NewMessage/MessageEdited
-   push handlers (large broadcast channels in Telegram often delay passive push updates).
+Primary collector: polls public channel web previews (https://t.me/s/<channel>) every 5 seconds
+via aiohttp — works immediately with zero Telethon login or userbot session required.
+Optional secondary collector: if a valid Telethon userbot session exists on disk, also attaches
+MTProto push handlers in the background.
 """
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import datetime, timedelta, timezone
+import html
+import logging
 from pathlib import Path
+import re
 
-from telethon import TelegramClient, events
-from telethon.tl.functions.channels import JoinChannelRequest
+import aiohttp
 
 from peace.config import channels, settings
 from peace.models import RawMessage
 
 log = logging.getLogger(__name__)
 
-POLL_INTERVAL_SEC = 10
-PRELOAD_LOOKBACK = timedelta(hours=2)
-PRELOAD_LIMIT = 15
+WEB_POLL_INTERVAL_SEC = 5
+PRELOAD_LOOKBACK = timedelta(minutes=90)
+
+_POST_RE = re.compile(r'data-post="([^"]+)/(\d+)"(.*?)(?=data-post="|\Z)', re.S)
+_TEXT_RE = re.compile(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', re.S)
+_TIME_RE = re.compile(r'<time[^>]*datetime="([^"]+)"')
+_BR_RE = re.compile(r"<br\s*/?>", re.I)
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
-async def run_listener(queue: asyncio.Queue[RawMessage]) -> None:
-    cfg = settings()
+def parse_web_channel_html(body: str, fallback_username: str) -> list[tuple[str, int, str, datetime]]:
+    """Extracts (username, message_id, text, timestamp) from https://t.me/s/<channel> HTML."""
+    results: list[tuple[str, int, str, datetime]] = []
+    for m in _POST_RE.finditer(body):
+        ch_name, mid_str, chunk = m.group(1), m.group(2), m.group(3)
+        t_match = _TEXT_RE.search(chunk)
+        dt_match = _TIME_RE.search(chunk)
+        if not t_match or not dt_match:
+            continue
+        txt = html.unescape(_BR_RE.sub("\n", t_match.group(1)))
+        txt = _TAG_RE.sub(" ", txt).strip()
+        if not txt:
+            continue
+        try:
+            dt = datetime.fromisoformat(dt_match.group(1))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            results.append((ch_name or fallback_username, int(mid_str), txt, dt))
+        except ValueError:
+            continue
+    return results
+
+
+async def _fetch_channel_web(
+    session: aiohttp.ClientSession, username: str
+) -> list[tuple[str, int, str, datetime]]:
+    url = f"https://t.me/s/{username}"
+    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        resp.raise_for_status()
+        body = await resp.text()
+    return parse_web_channel_html(body, username)
+
+
+async def run_listener(
+    queue: asyncio.Queue[RawMessage],
+    preload_done: asyncio.Event | None = None,
+) -> None:
     raw_usernames = [
         c["username"].lstrip("@")
         for c in channels()
         if c.get("username") and not str(c["username"]).upper().startswith("CHANGE_ME")
     ]
-
-    Path(cfg.tg_session_name).parent.mkdir(parents=True, exist_ok=True)
-    client = TelegramClient(cfg.tg_session_name, cfg.tg_api_id, cfg.tg_api_hash)
-    await client.connect()
-    if not await client.is_user_authorized():
-        raise RuntimeError(
-            "Userbot is not authorized. Run once: PYTHONPATH=src .venv/bin/python -m peace.login"
-        )
-
-    valid_chats = []
-    valid_names: list[str] = []
-    for uname in raw_usernames:
-        try:
-            entity = await client.get_entity(uname)
-            valid_chats.append(entity)
-            valid_names.append(getattr(entity, "username", None) or uname)
-            try:
-                await client(JoinChannelRequest(entity))
-            except Exception:  # noqa: BLE001
-                pass
-        except Exception as e:  # noqa: BLE001
-            log.warning("Skipping unresolved channel '%s': %s", uname, e)
-
-    if not valid_chats:
-        log.warning("No valid channels resolved from config/channels.yaml; listener is idle")
-        await client.run_until_disconnected()
+    if not raw_usernames:
+        log.warning("No channels configured in config/channels.yaml")
+        if preload_done:
+            preload_done.set()
         return
 
     seen: set[tuple[str, int, str]] = set()
     last_id: dict[str, int] = {}
 
-    async def _emit(source: str, msg_id: int, text: str, date: datetime, edited: bool, preload: bool) -> None:
+    async def _emit(
+        source: str, msg_id: int, text: str, date: datetime, edited: bool, preload: bool
+    ) -> None:
         clean = (text or "").strip()
         if not clean:
             return
@@ -85,53 +105,109 @@ async def run_listener(queue: asyncio.Queue[RawMessage]) -> None:
             )
         )
 
-    # 1. Preload recent messages (last 2 hours) sorted chronologically so /status is ready immediately
-    cutoff = datetime.now(timezone.utc) - PRELOAD_LOOKBACK
-    preload_batch: list[tuple[str, int, str, datetime]] = []
-    for entity, uname in zip(valid_chats, valid_names):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        )
+    }
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        # 1. Initial preload from the last 90 minutes across all channels
+        cutoff = datetime.now(timezone.utc) - PRELOAD_LOOKBACK
+        preload_batch: list[tuple[str, int, str, datetime]] = []
+        for uname in raw_usernames:
+            try:
+                posts = await _fetch_channel_web(session, uname)
+                for src, mid, txt, dt in posts:
+                    if mid > last_id.get(uname.lower(), 0):
+                        last_id[uname.lower()] = mid
+                    if dt >= cutoff:
+                        preload_batch.append((uname, mid, txt, dt))
+            except Exception as e:  # noqa: BLE001
+                log.warning("Initial web fetch failed for '%s': %s", uname, e)
+
+        for uname, mid, txt, dt in sorted(preload_batch, key=lambda x: x[3]):
+            await _emit(uname, mid, txt, dt, edited=False, preload=True)
+
+        log.info(
+            "Preloaded %d recent messages (last 90m) from %d channels: %s",
+            len(preload_batch),
+            len(raw_usernames),
+            raw_usernames,
+        )
+        if preload_done:
+            preload_done.set()
+
+        # 2. Optional Telethon listener if session file exists
+        telethon_task = asyncio.create_task(_optional_telethon_listener(raw_usernames, _emit))
+
+        # 3. Continuous 5-second web poller
         try:
-            msgs = await client.get_messages(entity, limit=PRELOAD_LIMIT)
-            for m in msgs:
-                if not m or not getattr(m, "id", None):
-                    continue
-                if m.id > last_id.get(uname.lower(), 0):
-                    last_id[uname.lower()] = m.id
-                if m.date and m.date >= cutoff and (m.raw_text or "").strip():
-                    preload_batch.append((uname, m.id, m.raw_text, m.date))
-        except Exception as e:  # noqa: BLE001
-            log.warning("Preload failed for '%s': %s", uname, e)
+            while True:
+                await asyncio.sleep(WEB_POLL_INTERVAL_SEC)
+                for uname in raw_usernames:
+                    try:
+                        posts = await _fetch_channel_web(session, uname)
+                        min_seen = last_id.get(uname.lower(), 0)
+                        for _, mid, txt, dt in sorted(posts, key=lambda x: x[1]):
+                            # Accept new messages or edits to the last 3 messages
+                            if mid > min_seen or mid >= max(1, min_seen - 2):
+                                await _emit(uname, mid, txt, dt, edited=mid <= min_seen, preload=False)
+                    except Exception as e:  # noqa: BLE001
+                        log.debug("Web poll error for '%s': %s", uname, e)
+        finally:
+            telethon_task.cancel()
 
-    for uname, mid, text, dt in sorted(preload_batch, key=lambda x: x[3]):
-        await _emit(uname, mid, text, dt, edited=False, preload=True)
-    log.info("Preloaded %d recent messages from %d channels", len(preload_batch), len(valid_names))
 
-    # 2. Real-time push handlers
-    async def _push_event(event, edited: bool) -> None:
-        chat = await event.get_chat()
-        source = getattr(chat, "username", None) or str(event.chat_id)
-        await _emit(source, event.id, event.raw_text or "", event.date, edited=edited, preload=False)
+async def _optional_telethon_listener(raw_usernames: list[str], emit_fn) -> None:
+    """Attaches Telethon push handlers if an authorized session file exists; never crashes the bot."""
+    cfg = settings()
+    session_file = Path(f"{cfg.tg_session_name}.session")
+    if not cfg.tg_api_id or not cfg.tg_api_hash or not session_file.exists():
+        log.info("Running in web-poller mode (no Telethon session needed)")
+        return
 
-    @client.on(events.NewMessage(chats=valid_chats))
-    async def on_new(event):
-        await _push_event(event, edited=False)
+    try:
+        from telethon import TelegramClient, events
+        from telethon.tl.functions.channels import JoinChannelRequest
 
-    @client.on(events.MessageEdited(chats=valid_chats))
-    async def on_edit(event):
-        await _push_event(event, edited=True)
+        client = TelegramClient(cfg.tg_session_name, cfg.tg_api_id, cfg.tg_api_hash)
+        await client.connect()
+        if not await client.is_user_authorized():
+            log.info("Telethon session not authorized; continuing with web-poller mode")
+            await client.disconnect()
+            return
 
-    # 3. Active polling loop (catches messages in large broadcast channels where MTProto push is delayed)
-    async def _poll_loop() -> None:
-        while True:
-            await asyncio.sleep(POLL_INTERVAL_SEC)
-            for entity, uname in zip(valid_chats, valid_names):
+        valid_chats = []
+        for uname in raw_usernames:
+            try:
+                entity = await client.get_entity(uname)
+                valid_chats.append(entity)
                 try:
-                    min_id = last_id.get(uname.lower(), 0)
-                    msgs = await client.get_messages(entity, limit=5, min_id=min_id)
-                    for m in sorted(msgs, key=lambda x: x.id):
-                        if m and getattr(m, "id", None) and (m.raw_text or "").strip():
-                            await _emit(uname, m.id, m.raw_text, m.date, edited=False, preload=False)
-                except Exception as e:  # noqa: BLE001
-                    log.debug("Poll error for '%s': %s", uname, e)
+                    await client(JoinChannelRequest(entity))
+                except Exception:  # noqa: BLE001
+                    pass
+            except Exception:  # noqa: BLE001
+                pass
 
-    log.info("Listening & polling %d channels: %s", len(valid_names), valid_names)
-    await asyncio.gather(client.run_until_disconnected(), _poll_loop())
+        if not valid_chats:
+            await client.disconnect()
+            return
+
+        @client.on(events.NewMessage(chats=valid_chats))
+        async def on_new(event):
+            chat = await event.get_chat()
+            source = getattr(chat, "username", None) or str(event.chat_id)
+            await emit_fn(source, event.id, event.raw_text or "", event.date, False, False)
+
+        @client.on(events.MessageEdited(chats=valid_chats))
+        async def on_edit(event):
+            chat = await event.get_chat()
+            source = getattr(chat, "username", None) or str(event.chat_id)
+            await emit_fn(source, event.id, event.raw_text or "", event.date, True, False)
+
+        log.info("Telethon push listener attached alongside web poller")
+        await client.run_until_disconnected()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Telethon optional listener stopped (%s); web poller remains active", e)

@@ -8,7 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from peace.analyzer.aggregator import Aggregator
-from peace.bot.formatter import format_situation
+from peace.bot.formatter import format_situation, format_snapshot
 from peace.bot.handlers import build_router
 from peace.collector.official_api import run_official_poller
 from peace.collector.telegram_listener import run_listener
@@ -44,7 +44,7 @@ async def pipeline(
             await event_q.put(ev)
         else:
             preview = raw.text.replace("\n", " ")[:90]
-            log.info("Ignored [%s#%s]: %s", raw.source, raw.message_id, preview)
+            log.debug("Ignored [%s#%s]: %s", raw.source, raw.message_id, preview)
 
 
 async def analyzer_loop(
@@ -60,13 +60,46 @@ async def analyzer_loop(
         for situation in changes:
             text = format_situation(situation)
             subs = await db.subscribers_for(situation.district)
-            log.info("Broadcasting update for %s (%s) to %d subscribers",
-                     situation.district, situation.level.value, len(subs))
+            log.info(
+                "Broadcasting update for %s (%s) to %d subscribers",
+                situation.district,
+                situation.level.value,
+                len(subs),
+            )
             for chat_id in subs:
                 try:
                     await bot.send_message(chat_id, text)
                 except Exception as e:  # noqa: BLE001
                     log.warning("send to %s failed: %s", chat_id, e)
+
+
+async def _notify_startup_snapshot(
+    preload_done: asyncio.Event,
+    raw_q: asyncio.Queue[RawMessage],
+    event_q: asyncio.Queue[ParsedEvent],
+    agg: Aggregator,
+    db: Database,
+    bot: Bot,
+) -> None:
+    """Once startup preload finishes, send the current active snapshot to existing subscribers."""
+    await preload_done.wait()
+    # Allow queues to drain preloaded items
+    while not raw_q.empty() or not event_q.empty():
+        await asyncio.sleep(0.1)
+
+    subs = await db.subscribers_for("*")
+    active = agg.snapshot()
+    log.info("Startup ready: %d active district(s), %d subscriber(s) in DB", len(active), len(subs))
+    if not subs:
+        log.warning("No subscribers in DB yet! Open your bot in Telegram and send /start")
+        return
+    if active:
+        text = format_snapshot(active)
+        for chat_id in subs:
+            try:
+                await bot.send_message(chat_id, text)
+            except Exception as e:  # noqa: BLE001
+                log.warning("startup send to %s failed: %s", chat_id, e)
 
 
 async def main() -> None:
@@ -83,12 +116,14 @@ async def main() -> None:
 
     raw_q: asyncio.Queue[RawMessage] = asyncio.Queue()
     event_q: asyncio.Queue[ParsedEvent] = asyncio.Queue()
+    preload_done = asyncio.Event()
 
     await asyncio.gather(
-        run_listener(raw_q),
+        run_listener(raw_q, preload_done),
         run_official_poller(event_q),
         pipeline(raw_q, event_q),
         analyzer_loop(event_q, agg, db, bot),
+        _notify_startup_snapshot(preload_done, raw_q, event_q, agg, db, bot),
         dp.start_polling(bot),
     )
 
