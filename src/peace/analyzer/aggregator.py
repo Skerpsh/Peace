@@ -139,6 +139,7 @@ class Aggregator:
             sources=sorted({e.source for e in active}),
             posts={e.source: e.message_id for e in sorted(active, key=lambda e: e.timestamp) if e.message_id},
             updated_at=evs[-1].timestamp,
+            since=min(e.timestamp for e in active),
         )
 
     @staticmethod

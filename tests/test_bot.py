@@ -125,7 +125,7 @@ def test_notifier_push_edit_and_blocked(tmp_path):
                                 date=datetime.now(timezone.utc)))
         await n.flush({s.district: s for s in agg.add(ev)})
 
-        pushed = [c for c, t in bot.sent if "загроза БпЛА" in t and "Статус зараз" not in t]
+        pushed = [c for c, t in bot.sent if "ДРОНИ" in t and "Статус зараз" not in t]
         assert sorted(pushed) == [1, 4]
         assert (1, 50) in bot.edited                  # live status edited in place
         assert any(c == 4 and "Статус зараз" in t for c, t in bot.sent)   # lost live status re-sent
@@ -136,6 +136,65 @@ def test_notifier_push_edit_and_blocked(tmp_path):
         bot.sent.clear()
         await n.flush({s.district: s for s in [agg.snapshot()[0]]})
         assert bot.sent == []
+        await db.conn.close()
+
+    asyncio.run(run())
+
+
+def test_escalation_and_silence():
+    from peace.bot.notifier import is_escalation, is_silent
+    yellow = S(AlertLevel.YELLOW, ["shahed"])
+    assert is_escalation(None, yellow)
+    assert is_escalation(yellow, S(AlertLevel.RED, ["shahed", "ballistic"]))
+    assert is_escalation(S(AlertLevel.RED, ["cruise_missile"]), S(AlertLevel.RED, ["cruise_missile", "ballistic"]))
+    assert not is_escalation(S(AlertLevel.RED, ["ballistic", "shahed"]), yellow)   # downgrade waits for the batch
+    assert not is_escalation(yellow, S(AlertLevel.NONE))
+    assert is_silent([yellow])                                             # unconfirmed drones
+    assert not is_silent([S(AlertLevel.RED, ["ballistic"])])               # red always rings
+    assert not is_silent([S(AlertLevel.NONE)])                             # all-clear rings
+    confirmed = S(AlertLevel.YELLOW, ["shahed"])
+    confirmed.confirmed = True
+    assert not is_silent([confirmed])
+
+
+def test_message_format_reads_at_a_glance():
+    from datetime import timedelta
+    from peace.bot.formatter import format_situation, with_start
+    now = datetime(2026, 1, 1, 12, 40, tzinfo=timezone.utc)
+    s = Situation(district="kyiv_all", level=AlertLevel.RED, threats=["shahed", "ballistic"],
+                  confidence=0.5, sources=["mon1"], posts={"mon1": 7},
+                  updated_at=now - timedelta(minutes=1), since=now - timedelta(minutes=40))
+    lines = format_situation(s, now).split("\n")
+    assert lines[0] == "🚀 <b>Київ: БАЛІСТИКА + ДРОНИ</b>"            # most dangerous first
+    assert lines[1] == "❔ попередньо · з 14:00, 40 хв"
+    assert "<blockquote expandable>" in lines[2] and "t.me/mon1/7" in lines[2]
+    assert "УКРИТТ" not in format_situation(s, now).upper()           # no instructions to act
+
+    clear = with_start(S(AlertLevel.NONE), s)
+    clear.updated_at = now + timedelta(minutes=32)
+    assert format_situation(clear, now).split("\n") == [
+        "🟢 <b>Київ: ВІДБІЙ ТРИВОГИ</b>", "Тривога тривала 1 год 12 хв · 15:12"]
+
+
+def test_red_pushes_go_first_and_delay_is_recorded(tmp_path):
+    async def run():
+        db = Database(str(tmp_path / "p.db"))
+        await db.connect()
+        await db.subscribe(1, "buchanskyi")          # gets only yellow
+        await db.subscribe(2, "kyiv_all")            # gets red
+        agg = Aggregator()
+        bot = FakeBot()
+        n = Notifier(bot, db, agg)
+        n.sync()
+        now = datetime.now(timezone.utc)
+        changes = []
+        for text in ("Буча: шахеди", "Київ: балістика"):
+            changes += agg.add(extract(RawMessage(source="official", message_id=len(changes) + 1,
+                                                  text=text, date=now)))
+        await n.flush({s.district: s for s in changes})
+        pushes = [c for c, t in bot.sent if "Статус зараз" not in t]
+        assert pushes == [2, 1]
+        assert len(n.delays) == 2 and all(d < 5 for _, d in n.delays)
         await db.conn.close()
 
     asyncio.run(run())

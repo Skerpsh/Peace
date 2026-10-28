@@ -38,7 +38,7 @@ def test_report_and_daily_summary(tmp_path):
         await db.set_quiet(1, True)
         now = datetime.now(timezone.utc)
         await db.log_ignored(RawMessage(source="ch", message_id=1, text="news", date=now))
-        notifier = SimpleNamespace(counters=Counter(push=3), ready=True)
+        notifier = SimpleNamespace(counters=Counter(push=3), ready=True, delays=[])
         mon = Monitor(None, db, Aggregator(), notifier, Health())
         mon._prev_report = now - timedelta(minutes=15)
         mon._prev_counters = {}                      # the 3 pushes happened during this period

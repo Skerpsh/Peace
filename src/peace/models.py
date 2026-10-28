@@ -54,3 +54,4 @@ class Situation:
     sources: list[str] = field(default_factory=list)
     posts: dict[str, int] = field(default_factory=dict)  # source -> latest message id (for links)
     updated_at: datetime | None = None
+    since: datetime | None = None   # when the current alert started (for its duration)

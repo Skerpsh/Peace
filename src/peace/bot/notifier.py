@@ -3,26 +3,32 @@
 Push policy: a push is sent when a zone's alert level changes or a new threat type appears.
 Smaller changes (confirmation, direction, sources) only edit the live "status now" message.
 In night mode only red escalations and all-clears are pushed.
+
+Speed: escalations are delivered at once (not batched), pushes go out in parallel at Telegram's
+rate limit with red ones first, and live statuses are edited only after every push is out.
+An unconfirmed non-red alert arrives without sound; red alerts and all-clears always ring.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections import Counter
+import time
+from collections import Counter, deque
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
 from peace.analyzer.aggregator import Aggregator
-from peace.bot.formatter import KYIV_TZ, RANK, format_live, format_update
+from peace.bot.formatter import KYIV_TZ, RANK, format_live, format_update, with_start
 from peace.config import settings
 from peace.models import AlertLevel, Situation
 from peace.storage.db import Database, Recipient
 
 log = logging.getLogger(__name__)
 
-SEND_GAP_SEC = 0.05  # stay well under Telegram's ~30 messages/second bot limit
+SEND_PER_SEC = 25  # Telegram allows bots about 30 messages per second in total
 
 
 def is_night(now: datetime | None = None) -> bool:
@@ -43,6 +49,19 @@ def should_push(old: Situation | None, new: Situation, quiet: bool = False) -> b
     return old_level != new.level or bool(new_threats)
 
 
+def is_escalation(old: Situation | None, new: Situation) -> bool:
+    """A worse situation: a higher level or a new threat type. Delivered without batching."""
+    if new.level is AlertLevel.NONE:
+        return False
+    old_level = old.level if old else AlertLevel.NONE
+    return RANK[new.level] > RANK[old_level] or bool(set(new.threats) - set(old.threats if old else []))
+
+
+def is_silent(push: list[Situation]) -> bool:
+    """Only unconfirmed yellow/untyped alerts arrive without sound."""
+    return all(not s.confirmed and s.level in (AlertLevel.YELLOW, AlertLevel.ALERT) for s in push)
+
+
 class Notifier:
     def __init__(self, bot: Bot, db: Database, agg: Aggregator) -> None:
         self.bot = bot
@@ -51,6 +70,11 @@ class Notifier:
         self.last_sent: dict[str, Situation] = {}
         self.ready = False   # no deliveries until the startup state is synced
         self.counters: Counter[str] = Counter()   # push / failed / blocked, read by the monitor
+        # (time, seconds from the source post to the last push of it), read by the monitor
+        self.delays: deque[tuple[float, float]] = deque(maxlen=2000)
+
+    def is_urgent(self, s: Situation) -> bool:
+        return self.ready and is_escalation(self.last_sent.get(s.district), s)
 
     def sync(self) -> None:
         """Marks the current aggregated state as already delivered (used after startup preload)."""
@@ -62,7 +86,8 @@ class Notifier:
         if not self.ready:
             return
         old = {d: self.last_sent.get(d) for d in changed}
-        deltas = {d: s for d, s in changed.items() if Aggregator.is_meaningful_change(old[d], s)}
+        deltas = {d: with_start(s, old[d]) for d, s in changed.items()
+                  if Aggregator.is_meaningful_change(old[d], s)}
         if not deltas:
             return
         self.last_sent.update(deltas)
@@ -70,25 +95,49 @@ class Notifier:
         night = is_night()
 
         recipients = [r for r in await self.db.recipients() if any(r.wants(d) for d in deltas)]
-        log.info("Delivering %d changed zone(s) to %d chat(s)", len(deltas), len(recipients))
+        jobs = []
         for r in recipients:
             push = [s for d, s in deltas.items()
                     if r.wants(d) and should_push(old[d], s, quiet=r.quiet and night)]
             if push:
-                try:
-                    if await self._safe(r.chat_id, lambda r=r, push=push: self.bot.send_message(
-                            r.chat_id, format_update(push), disable_web_page_preview=True)):
-                        self.counters["push"] += 1
-                except Exception as e:  # noqa: BLE001
-                    self.counters["failed"] += 1
-                    log.warning("Push to %s failed: %s", r.chat_id, e)
-            await self.refresh_live(r, active)
+                jobs.append((r.chat_id, push))
+        jobs.sort(key=lambda j: -max(RANK[s.level] for s in j[1]))   # red first
+        log.info("Delivering %d changed zone(s): %d push(es), %d live status(es)",
+                 len(deltas), len(jobs), len(recipients))
+
+        await self._paced([lambda c=c, p=p: self._push(c, p) for c, p in jobs])
+        if jobs:
+            now = datetime.now(timezone.utc)
+            pushed = {s.district for _, p in jobs for s in p}
+            for d in pushed:
+                if deltas[d].updated_at:
+                    self.delays.append((time.time(), (now - deltas[d].updated_at).total_seconds()))
+        await self._paced([lambda r=r: self.refresh_live(r, active) for r in recipients])
+
+    async def _push(self, chat_id: int, push: list[Situation]) -> None:
+        try:
+            if await self._safe(chat_id, lambda: self.bot.send_message(
+                    chat_id, format_update(push), disable_web_page_preview=True,
+                    disable_notification=is_silent(push))):
+                self.counters["push"] += 1
+        except Exception as e:  # noqa: BLE001
+            self.counters["failed"] += 1
+            log.warning("Push to %s failed: %s", chat_id, e)
+
+    @staticmethod
+    async def _paced(calls: list[Callable[[], Awaitable[None]]]) -> None:
+        """Runs calls in parallel, at most SEND_PER_SEC per second."""
+        loop = asyncio.get_running_loop()
+        for i in range(0, len(calls), SEND_PER_SEC):
+            started = loop.time()
+            await asyncio.gather(*(c() for c in calls[i:i + SEND_PER_SEC]))
+            if i + SEND_PER_SEC < len(calls):
+                await asyncio.sleep(max(0.0, 1.0 - (loop.time() - started)))
 
     async def refresh_all(self) -> None:
         """Re-renders every live status (keeps 'outdated' notices honest during long alerts)."""
         active = self.agg.snapshot()
-        for r in await self.db.recipients():
-            await self.refresh_live(r, active)
+        await self._paced([lambda r=r: self.refresh_live(r, active) for r in await self.db.recipients()])
 
     async def refresh_live(self, r: Recipient, active: list[Situation]) -> None:
         text = format_live([s for s in active if r.wants(s.district)])
@@ -131,9 +180,7 @@ class Notifier:
         """
         for _ in range(3):
             try:
-                result = await call()
-                await asyncio.sleep(SEND_GAP_SEC)
-                return result
+                return await call()
             except TelegramRetryAfter as e:
                 log.warning("Flood control: waiting %ss", e.retry_after)
                 await asyncio.sleep(e.retry_after)

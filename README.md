@@ -13,14 +13,19 @@ Zones: **Kyiv** is a single zone (neighbourhood names like Troieshchyna or Pozni
 - 📍 **Live status** — one pinned "Статус зараз" message per chat, edited in place on every change
 - 🔔 **Pushes only when it matters** — a new message is sent when the alert level changes or a new
   threat type appears; confirmations, directions and sources only update the live status
-- 🧺 **Batching** — changes within `BATCH_SECONDS` are merged into one notification
-  (a burst of posts about one attack = one push, and other channels get time to confirm it)
+- ⚡ **Escalations at once** — a worse level or a new threat type is delivered immediately, in parallel
+  at Telegram's rate limit, red first; downgrades and confirmations are merged for `BATCH_SECONDS`
+- 👀 **Readable at a glance** — the first line (what a locked phone shows) is the zone and the threats
+  with an icon per type (🚀 ballistic, 🔴 missiles, ✈️ aviation, 🟡 drones), the second how long it
+  lasts and whether it is still unconfirmed; sources and confidence are folded away. No instructions,
+  only facts
+- 🔕 Unconfirmed drone alerts arrive without sound; red alerts and all-clears always ring
 - 🗺 **Zone picker** — `/zones` inline keyboard, any combination of zones or "all zones"
 - 🌙 **Night mode** — `/quiet`: during `QUIET_START_HOUR`–`QUIET_END_HOUR` only red escalations and all-clears push
 - 🔗 Every alert links to the source posts
 
 Admin (`ADMIN_CHAT_ID`, learn it with `/id`): a silent report every 15 minutes and a daily summary,
-alarms when a source fails for 10+ minutes, the disk or memory runs low or the backup is too old,
+delivery delay (source post → push) in reports, alarms when a source fails for 10+ minutes, the disk or memory runs low or the backup is too old,
 `/stats`, `/today`, `/health`, `/debug` (last unrecognised messages) and `/debug <text>` (how a text is parsed).
 
 ## Alert Level Mechanics (Kyiv / Kyiv Oblast)

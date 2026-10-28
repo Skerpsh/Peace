@@ -61,6 +61,7 @@ async def analyzer_loop(
 
     Changes are collected for BATCH_SECONDS after the first one, so a burst of posts about the
     same attack becomes one notification and other channels get time to confirm it.
+    Escalations (a worse level or a new threat) skip the wait: speed matters more there.
     """
     loop = asyncio.get_running_loop()
     pending: dict[str, Situation] = {}
@@ -82,7 +83,9 @@ async def analyzer_loop(
             continue
         for situation in changes:
             pending[situation.district] = situation
-        if pending and deadline is None:
+        if any(notifier.is_urgent(s) for s in changes):
+            deadline = loop.time()   # deliver now, together with whatever is pending
+        elif pending and deadline is None:
             deadline = loop.time() + settings().batch_seconds
 
 

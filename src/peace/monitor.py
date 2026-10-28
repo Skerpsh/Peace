@@ -115,6 +115,14 @@ def _ago(hours: float | None) -> str:
     return f"{hours * 60:.0f} хв тому" if hours < 1 else f"{hours:.0f} год тому"
 
 
+def delay_text(delays, start: float, end: float = float("inf")) -> str:
+    """Median and worst seconds from a source post to the last push of it, within [start, end)."""
+    vals = sorted(d for t, d in delays if start <= t < end)
+    if not vals:
+        return "—"
+    return f"медіана {vals[len(vals) // 2]:.0f} с, найгірша {vals[-1]:.0f} с"
+
+
 def _uptime() -> str:
     mins = int((time.monotonic() - STARTED) // 60)
     return f"{mins // 1440} д {mins % 1440 // 60} год" if mins >= 1440 else f"{mins // 60} год {mins % 60} хв"
@@ -170,6 +178,7 @@ class Monitor:
             f"🚨 Активні зони: {len(self.agg.snapshot())}",
             f"📨 За {mins} хв: подій {events}, нерозпізнаних {ignored}, пушів {pushes}"
             + (f", помилок {failed}" if failed else ""),
+            f"⏱ Затримка (пост → пуш): {delay_text(self.notifier.delays, since.timestamp())}",
             f"📡 Джерела: {n_sources - len(down)}/{n_sources} працюють"
             + (f" · ⚠️ {', '.join(down)}" if down else ""),
             f"💾 Диск: {m['disk_free_gb']:.1f} ГБ вільно ({m['disk_free_pct']:.0f}%)"
@@ -189,6 +198,7 @@ class Monitor:
         end = start + timedelta(days=1)
         s, e = start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
         return {
+            "delay": delay_text(self.notifier.delays, start.timestamp(), end.timestamp()),
             "subscribers": len(await self.db.recipients()),
             "events": await self.db.count_since("events", s, e),
             "ignored": await self.db.count_since("ignored", s, e),
@@ -212,6 +222,7 @@ class Monitor:
             f"📨 Подій: {today['events']}{_delta(today['events'], prev.get('events'))}",
             f"❔ Нерозпізнаних: {today['ignored']}{_delta(today['ignored'], prev.get('ignored'))}",
             f"🔔 Пушів: {pushes}{_delta(pushes, prev.get('pushes'))}",
+            f"⏱ Затримка: {today['delay']}",
         ])
 
     def health_text(self) -> str:
