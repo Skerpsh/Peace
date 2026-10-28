@@ -15,12 +15,15 @@ from peace.models import AlertLevel, ParsedEvent, Situation
 from peace.parser.extractor import level_for_threats
 
 _LEVEL_RANK = {AlertLevel.NONE: 0, AlertLevel.ALERT: 1, AlertLevel.YELLOW: 2, AlertLevel.RED: 3}
+# Memory bounds for a long-running process
+_MAX_SEEN = 5000
+_MAX_EVENTS_PER_DISTRICT = 500
 
 
 class Aggregator:
     def __init__(self) -> None:
         self._events: dict[str, list[ParsedEvent]] = defaultdict(list)
-        self._seen: set[tuple[str, int, str]] = set()
+        self._seen: dict[tuple[str, int, str], None] = {}  # insertion-ordered set
         self._state: dict[str, Situation] = {}
 
     def add(self, ev: ParsedEvent) -> list[Situation]:
@@ -28,14 +31,17 @@ class Aggregator:
         key = (ev.source, ev.message_id, ev.raw_text)
         if ev.message_id and key in self._seen:
             return []  # Duplicate
-        self._seen.add(key)
+        self._seen[key] = None
+        if len(self._seen) > _MAX_SEEN:
+            for old in list(self._seen)[: _MAX_SEEN // 5]:
+                del self._seen[old]
 
         changed: list[Situation] = []
         for d in ev.districts:
             self._events[d].append(ev)
             new = self._compute(d)
             old = self._state.get(d)
-            if self._is_meaningful_change(old, new):
+            if self.is_meaningful_change(old, new):
                 changed.append(new)
             self._state[d] = new
         return changed
@@ -99,7 +105,8 @@ class Aggregator:
         # Prune history prior to the latest accepted full all-clear
         if last_reset >= 0:
             evs = evs[last_reset + 1:]
-        self._events[district] = evs
+        # shortcut: hard cap drops the oldest events of a very long alert; raise if alerts outlive 500 messages
+        self._events[district] = evs = evs[-_MAX_EVENTS_PER_DISTRICT:]
 
         if support:
             level = level_for_threats(set(support))
@@ -130,11 +137,12 @@ class Aggregator:
             confidence=round(conf, 2),
             confirmed=conf >= min_conf,
             sources=sorted({e.source for e in active}),
+            posts={e.source: e.message_id for e in sorted(active, key=lambda e: e.timestamp) if e.message_id},
             updated_at=evs[-1].timestamp,
         )
 
     @staticmethod
-    def _is_meaningful_change(old: Situation | None, new: Situation) -> bool:
+    def is_meaningful_change(old: Situation | None, new: Situation) -> bool:
         if old is None:
             return new.level is not AlertLevel.NONE
         return (

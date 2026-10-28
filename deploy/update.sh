@@ -96,6 +96,10 @@ main() {
         rollback "Service failed to stay up after restart"
     fi
 
+    local MISSING
+    MISSING="$(comm -23 <(grep -oE '^[A-Z_]+=' .env.example | sort -u) <(grep -oE '^[A-Z_]+=' .env | sort -u) | tr -d '=' | xargs)"
+    [ -z "$MISSING" ] || printf '\033[1;33m[!] Not set in .env (defaults used): %s — see .env.example\033[0m\n' "$MISSING"
+
     ok "Deployed and running: $(git log -1 --format='%h %s')"
     journalctl -u "$SERVICE" -n 10 --no-pager 2>/dev/null || true
 }

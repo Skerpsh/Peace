@@ -8,21 +8,25 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from peace.analyzer.aggregator import Aggregator
-from peace.bot.formatter import format_situation, format_snapshot
-from peace.bot.handlers import build_router
+from peace.bot.handlers import COMMANDS, build_router
+from peace.bot.notifier import Notifier
 from peace.collector.official_api import run_official_poller
 from peace.collector.telegram_listener import run_listener
-from peace.config import settings
-from peace.models import ParsedEvent, RawMessage
+from peace.config import channels, settings
+from peace.health import health
+from peace.models import ParsedEvent, RawMessage, Situation
 from peace.parser.extractor import extract
 from peace.storage.db import Database
 
 log = logging.getLogger("peace")
 
+LIVE_REFRESH_SEC = 5 * 60
+
 
 async def pipeline(
     raw_q: asyncio.Queue[RawMessage],
     event_q: asyncio.Queue[ParsedEvent],
+    db: Database,
 ) -> None:
     """RawMessage -> ParsedEvent."""
     while True:
@@ -45,61 +49,73 @@ async def pipeline(
         else:
             preview = raw.text.replace("\n", " ")[:90]
             log.debug("Ignored [%s#%s]: %s", raw.source, raw.message_id, preview)
+            if not raw.preload:
+                await db.log_ignored(raw)
 
 
 async def analyzer_loop(
-    event_q: asyncio.Queue[ParsedEvent], agg: Aggregator, db: Database, bot: Bot
+    event_q: asyncio.Queue[ParsedEvent], agg: Aggregator, db: Database, notifier: Notifier
 ) -> None:
-    """ParsedEvent -> Aggregator -> broadcast state changes to subscribers."""
+    """ParsedEvent -> Aggregator -> batched delivery.
+
+    Changes are collected for BATCH_SECONDS after the first one, so a burst of posts about the
+    same attack becomes one notification and other channels get time to confirm it.
+    """
+    loop = asyncio.get_running_loop()
+    pending: dict[str, Situation] = {}
+    deadline: float | None = None
     while True:
-        ev = await event_q.get()
+        timeout = None if deadline is None else max(0.0, deadline - loop.time())
+        try:
+            ev = await asyncio.wait_for(event_q.get(), timeout)
+        except asyncio.TimeoutError:
+            batch, pending, deadline = pending, {}, None
+            try:
+                await notifier.flush(batch)
+            except Exception:  # noqa: BLE001
+                log.exception("Delivery failed")
+            continue
         await db.log_event(ev)
         changes = agg.add(ev)
         if ev.preload:
             continue
         for situation in changes:
-            text = format_situation(situation)
-            subs = await db.subscribers_for(situation.district)
-            log.info(
-                "Broadcasting update for %s (%s) to %d subscribers",
-                situation.district,
-                situation.level.value,
-                len(subs),
-            )
-            for chat_id in subs:
-                try:
-                    await bot.send_message(chat_id, text)
-                except Exception as e:  # noqa: BLE001
-                    log.warning("send to %s failed: %s", chat_id, e)
+            pending[situation.district] = situation
+        if pending and deadline is None:
+            deadline = loop.time() + settings().batch_seconds
 
 
-async def _notify_startup_snapshot(
+async def _startup(
     preload_done: asyncio.Event,
     raw_q: asyncio.Queue[RawMessage],
     event_q: asyncio.Queue[ParsedEvent],
     agg: Aggregator,
     db: Database,
-    bot: Bot,
+    notifier: Notifier,
+    notify_admin,
 ) -> None:
-    """Once startup preload finishes, send the current active snapshot to existing subscribers."""
+    """Once startup preload finishes, mark it delivered and refresh everyone's live status (no pushes)."""
     await preload_done.wait()
     # Allow queues to drain preloaded items
     while not raw_q.empty() or not event_q.empty():
         await asyncio.sleep(0.1)
 
-    subs = await db.subscribers_for("*")
+    notifier.sync()
+    recipients = await db.recipients()
     active = agg.snapshot()
-    log.info("Startup ready: %d active district(s), %d subscriber(s) in DB", len(active), len(subs))
-    if not subs:
+    log.info("Startup ready: %d active zone(s), %d subscriber(s) in DB", len(active), len(recipients))
+    if not recipients:
         log.warning("No subscribers in DB yet! Open your bot in Telegram and send /start")
-        return
-    if active:
-        text = format_snapshot(active)
-        for chat_id in subs:
-            try:
-                await bot.send_message(chat_id, text)
-            except Exception as e:  # noqa: BLE001
-                log.warning("startup send to %s failed: %s", chat_id, e)
+    await notifier.refresh_all()
+    await notify_admin(
+        f"🚀 PEACE запущено: {len(channels())} каналів, {len(recipients)} підписників, "
+        f"{len(active)} активних зон"
+    )
+
+    while True:
+        await asyncio.sleep(LIVE_REFRESH_SEC)
+        if agg.snapshot():
+            await notifier.refresh_all()
 
 
 async def main() -> None:
@@ -111,8 +127,18 @@ async def main() -> None:
     agg = Aggregator()
 
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
+    notifier = Notifier(bot, db, agg)
     dp = Dispatcher()
-    dp.include_router(build_router(db, agg))
+    dp.include_router(build_router(db, notifier))
+    await bot.set_my_commands(COMMANDS)
+
+    async def notify_admin(text: str) -> None:
+        if not cfg.admin_chat_id:
+            return
+        try:
+            await bot.send_message(cfg.admin_chat_id, text)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Admin notice failed: %s", e)
 
     raw_q: asyncio.Queue[RawMessage] = asyncio.Queue()
     event_q: asyncio.Queue[ParsedEvent] = asyncio.Queue()
@@ -121,9 +147,10 @@ async def main() -> None:
     await asyncio.gather(
         run_listener(raw_q, preload_done),
         run_official_poller(event_q),
-        pipeline(raw_q, event_q),
-        analyzer_loop(event_q, agg, db, bot),
-        _notify_startup_snapshot(preload_done, raw_q, event_q, agg, db, bot),
+        pipeline(raw_q, event_q, db),
+        analyzer_loop(event_q, agg, db, notifier),
+        _startup(preload_done, raw_q, event_q, agg, db, notifier, notify_admin),
+        health.watch(notify_admin),
         dp.start_polling(bot),
     )
 

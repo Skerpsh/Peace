@@ -52,4 +52,5 @@ class Situation:
     confidence: float = 0.0
     confirmed: bool = False         # True when confidence >= MIN_CONFIDENCE
     sources: list[str] = field(default_factory=list)
+    posts: dict[str, int] = field(default_factory=dict)  # source -> latest message id (for links)
     updated_at: datetime | None = None

@@ -37,7 +37,7 @@ def test_threat_holds_until_new_info_and_marked_stale():
     # Threat remains active and confidence does not decay over time
     assert s.level is AlertLevel.YELLOW
     assert s.confidence == 0.5
-    assert "no updates for" in format_situation(s)
+    assert "оновлень немає" in format_situation(s)
 
 
 def test_official_partial_clear_red_to_yellow():

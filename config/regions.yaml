@@ -1,24 +1,21 @@
-# Canonical district keys, English display names, and text aliases (UA/RU/EN roots for matching).
+# Canonical zone keys, Ukrainian display names, and text aliases (UA/RU/EN roots for matching).
 # Matching checks substring presence in normalized (lowercase) message text.
 kyiv_city:
-  holosiivskyi:    {name: "Holosiivskyi District",    aliases: ["голосіїв", "голосеев", "теремк", "holosiiv"]}
-  darnytskyi:      {name: "Darnytskyi District",      aliases: ["дарниц", "позняк", "осокорк", "darnyts"]}
-  desnianskyi:     {name: "Desnianskyi District",     aliases: ["деснян", "троєщин", "троещин", "лісов", "desnian"]}
-  dniprovskyi:     {name: "Dniprovskyi District",     aliases: ["дніпровськ", "днепровск", "русанів", "березняк", "воскресенк", "dniprovsk"]}
-  obolonskyi:      {name: "Obolonskyi District",      aliases: ["оболон", "мінськ", "пуща-водиц", "obolon"]}
-  pecherskyi:      {name: "Pecherskyi District",      aliases: ["печерськ", "печерск", "pechersk"]}
-  podilskyi:       {name: "Podilskyi District",       aliases: ["поділ", "подол", "виноградар", "куренів", "podil"]}
-  sviatoshynskyi:  {name: "Sviatoshynskyi District",  aliases: ["святошин", "борщагів", "борщагов", "академмістечк", "sviatoshyn"]}
-  solomianskyi:    {name: "Solomianskyi District",    aliases: ["солом'ян", "соломян", "соломен", "відрадн", "жулян", "solomian"]}
-  shevchenkivskyi: {name: "Shevchenkivskyi District", aliases: ["шевченків", "шевченковск", "лук'янів", "нивк", "сирец", "shevchenkiv"]}
-  kyiv_all:        {name: "Kyiv City",                aliases: ["київ", "києв", "киев", "столиц", "kyiv", "kiev"]}
+  # Kyiv is a single zone: city-district and neighbourhood names all map to kyiv_all.
+  kyiv_all:        {name: "Київ", aliases: [
+    "київ", "києв", "киев", "столиц", "kyiv", "kiev",
+    "голосіїв", "голосеев", "теремк", "дарниц", "позняк", "осокорк", "деснян", "троєщин", "троещин",
+    "лісов", "дніпровськ", "днепровск", "русанів", "березняк", "воскресенк", "оболон", "пуща-водиц",
+    "печерськ", "печерск", "поділ", "подол", "виноградар", "куренів", "святошин", "борщагів", "борщагов",
+    "академмістечк", "солом'ян", "соломян", "соломен", "відрадн", "жулян", "шевченків", "шевченковск",
+    "лук'янів", "нивк", "сирец"]}
 
 kyiv_oblast:
-  bilotserkivskyi: {name: "Bila Tserkva District",    aliases: ["біла церкв", "белая церк", "білоцерків", "белоцерков", "сквир", "тетіїв", "таращ", "рокітн", "узин", "bila tserkv", "bilotserkiv"]}
-  boryspilskyi:    {name: "Boryspil District",        aliases: ["бориспіл", "борисп", "переяслав", "яготин", "boryspil"]}
-  brovarskyi:      {name: "Brovary District",         aliases: ["бровар", "баришів", "березан", "велика димерк", "brovar"]}
-  buchanskyi:      {name: "Bucha District",           aliases: ["буча", "бучан", "ірпін", "ирпен", "гостомел", "бородян", "ворзел", "пісківк", "немішаєв", "коцюбинськ", "макарів", "музич", "бузов", "bucha", "irpin", "hostomel"]}
-  vyshhorodskyi:   {name: "Vyshhorod District",       aliases: ["вишгород", "вышгород", "димер", "дымер", "іванків", "иванков", "воропаїв", "славутич", "чорнобил", "чзв", "vyshhorod"]}
-  obukhivskyi:     {name: "Obukhiv District",         aliases: ["обухів", "обухов", "українк", "украинк", "кагарлик", "миронів", "богуслав", "васильків", "васильков", "козин", "obukhiv"]}
-  fastivskyi:      {name: "Fastiv District",          aliases: ["фастів", "фастов", "боярк", "глевах", "чабан", "калинівк", "fastiv"]}
-  oblast_all:      {name: "Kyiv Oblast",              aliases: ["київщин", "киевщин", "київська обл", "киевская обл", "київської обл", "київ та область", "півночі області", "kyiv oblast", "kyiv region"]}
+  bilotserkivskyi: {name: "Білоцерківський р-н",    aliases: ["біла церкв", "белая церк", "білоцерків", "белоцерков", "сквир", "тетіїв", "таращ", "рокітн", "узин", "bila tserkv", "bilotserkiv"]}
+  boryspilskyi:    {name: "Бориспільський р-н",        aliases: ["бориспіл", "борисп", "переяслав", "яготин", "boryspil"]}
+  brovarskyi:      {name: "Броварський р-н",         aliases: ["бровар", "баришів", "березан", "велика димерк", "brovar"]}
+  buchanskyi:      {name: "Бучанський р-н",           aliases: ["буча", "бучан", "ірпін", "ирпен", "гостомел", "бородян", "ворзел", "пісківк", "немішаєв", "коцюбинськ", "макарів", "музич", "бузов", "bucha", "irpin", "hostomel"]}
+  vyshhorodskyi:   {name: "Вишгородський р-н",       aliases: ["вишгород", "вышгород", "димер", "дымер", "іванків", "иванков", "воропаїв", "славутич", "чорнобил", "чзв", "vyshhorod"]}
+  obukhivskyi:     {name: "Обухівський р-н",         aliases: ["обухів", "обухов", "українк", "украинк", "кагарлик", "миронів", "богуслав", "васильків", "васильков", "козин", "obukhiv"]}
+  fastivskyi:      {name: "Фастівський р-н",          aliases: ["фастів", "фастов", "боярк", "глевах", "чабан", "калинівк", "fastiv"]}
+  oblast_all:      {name: "Київська область",              aliases: ["київщин", "киевщин", "київська обл", "киевская обл", "київської обл", "київ та область", "півночі області", "kyiv oblast", "kyiv region"]}

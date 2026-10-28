@@ -1,0 +1,24 @@
+# Regression corpus of real-style channel messages.
+# Add every misparsed message here with the expected result, then fix the rules.
+# Fields: text (required), source (default "test"), and expected values:
+#   ignored: true            — the message must be ignored
+#   districts / level / threats / all_clear — compared exactly when present
+- text: "Повітряна тривога на Троєщині, шахеди"
+  districts: [kyiv_all]
+  level: yellow
+- text: "Позняки, Осокорки — вибухи, балістика"
+  districts: [kyiv_all]
+  level: red
+- text: "Оболонь та Вишгород — дрони курсом на північ"
+  districts: [kyiv_all, vyshhorodskyi]
+  level: yellow
+- text: "Київська область: загроза БпЛА"
+  districts: [oblast_all]
+  level: yellow
+- text: "🟢 Відбій тривоги. Київ"
+  districts: [kyiv_all]
+  all_clear: true
+- text: "Загроза балістики у Подільському районі Одещини"
+  ignored: true
+- text: "🔴 Тривога у Харківській області"
+  ignored: true

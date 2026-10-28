@@ -17,12 +17,14 @@ import re
 import aiohttp
 
 from peace.config import channels, settings
+from peace.health import health
 from peace.models import RawMessage
 
 log = logging.getLogger(__name__)
 
 WEB_POLL_INTERVAL_SEC = 5
 PRELOAD_LOOKBACK = timedelta(minutes=90)
+MAX_SEEN = 5000
 
 _POST_RE = re.compile(r'data-post="([^"]+)/(\d+)"(.*?)(?=data-post="|\Z)', re.S)
 _TEXT_RE = re.compile(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', re.S)
@@ -64,6 +66,25 @@ async def _fetch_channel_web(
     return parse_web_channel_html(body, username)
 
 
+async def _poll_all(
+    session: aiohttp.ClientSession, usernames: list[str]
+) -> list[tuple[str, list[tuple[str, int, str, datetime]]]]:
+    """Fetches all channels in parallel; failures are reported to health and skipped."""
+    results = await asyncio.gather(
+        *(_fetch_channel_web(session, u) for u in usernames), return_exceptions=True
+    )
+    ok = []
+    for uname, posts in zip(usernames, results):
+        if isinstance(posts, BaseException):
+            if uname not in health.failing_since:
+                log.warning("Web fetch failed for '%s': %r", uname, posts)
+            health.fail(uname, repr(posts))
+            continue
+        health.ok(uname)
+        ok.append((uname, posts))
+    return ok
+
+
 async def run_listener(
     queue: asyncio.Queue[RawMessage],
     preload_done: asyncio.Event | None = None,
@@ -79,7 +100,7 @@ async def run_listener(
             preload_done.set()
         return
 
-    seen: set[tuple[str, int, str]] = set()
+    seen: dict[tuple[str, int, str], None] = {}  # insertion-ordered set
     last_id: dict[str, int] = {}
 
     async def _emit(
@@ -91,7 +112,10 @@ async def run_listener(
         key = (source.lower(), msg_id, clean)
         if key in seen:
             return
-        seen.add(key)
+        seen[key] = None
+        if len(seen) > MAX_SEEN:
+            for old in list(seen)[: MAX_SEEN // 5]:
+                del seen[old]
         if msg_id > last_id.get(source.lower(), 0):
             last_id[source.lower()] = msg_id
         await queue.put(
@@ -116,16 +140,12 @@ async def run_listener(
         # 1. Initial preload from the last 90 minutes across all channels
         cutoff = datetime.now(timezone.utc) - PRELOAD_LOOKBACK
         preload_batch: list[tuple[str, int, str, datetime]] = []
-        for uname in raw_usernames:
-            try:
-                posts = await _fetch_channel_web(session, uname)
-                for src, mid, txt, dt in posts:
-                    if mid > last_id.get(uname.lower(), 0):
-                        last_id[uname.lower()] = mid
-                    if dt >= cutoff:
-                        preload_batch.append((uname, mid, txt, dt))
-            except Exception as e:  # noqa: BLE001
-                log.warning("Initial web fetch failed for '%s': %s", uname, e)
+        for uname, posts in await _poll_all(session, raw_usernames):
+            for src, mid, txt, dt in posts:
+                if mid > last_id.get(uname.lower(), 0):
+                    last_id[uname.lower()] = mid
+                if dt >= cutoff:
+                    preload_batch.append((uname, mid, txt, dt))
 
         for uname, mid, txt, dt in sorted(preload_batch, key=lambda x: x[3]):
             await _emit(uname, mid, txt, dt, edited=False, preload=True)
@@ -146,16 +166,12 @@ async def run_listener(
         try:
             while True:
                 await asyncio.sleep(WEB_POLL_INTERVAL_SEC)
-                for uname in raw_usernames:
-                    try:
-                        posts = await _fetch_channel_web(session, uname)
-                        min_seen = last_id.get(uname.lower(), 0)
-                        for _, mid, txt, dt in sorted(posts, key=lambda x: x[1]):
-                            # Accept new messages or edits to the last 3 messages
-                            if mid > min_seen or mid >= max(1, min_seen - 2):
-                                await _emit(uname, mid, txt, dt, edited=mid <= min_seen, preload=False)
-                    except Exception as e:  # noqa: BLE001
-                        log.debug("Web poll error for '%s': %s", uname, e)
+                for uname, posts in await _poll_all(session, raw_usernames):
+                    min_seen = last_id.get(uname.lower(), 0)
+                    for _, mid, txt, dt in sorted(posts, key=lambda x: x[1]):
+                        # Accept new messages or edits to the last 3 messages
+                        if mid > min_seen or mid >= max(1, min_seen - 2):
+                            await _emit(uname, mid, txt, dt, edited=mid <= min_seen, preload=False)
         finally:
             telethon_task.cancel()
 

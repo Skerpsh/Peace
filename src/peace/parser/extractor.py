@@ -57,15 +57,9 @@ def _find_districts(text: str, source: str = "", allow_default: bool = True) -> 
         if any(alias in haystack for alias in info["aliases"]):
             found.append(key)
 
-    # Drop kyiv_all only if a specific Kyiv City district is matched;
-    # drop oblast_all only if a specific Kyiv Oblast raion is matched.
-    has_city_specific = any(reg[k]["area"] == "kyiv_city" and k != "kyiv_all" for k in found)
+    # Drop oblast_all only if a specific Kyiv Oblast raion is matched.
     has_oblast_specific = any(reg[k]["area"] == "kyiv_oblast" and k != "oblast_all" for k in found)
-    filtered = [
-        k for k in found
-        if not (k == "kyiv_all" and has_city_specific)
-        and not (k == "oblast_all" and has_oblast_specific)
-    ]
+    filtered = [k for k in found if not (k == "oblast_all" and has_oblast_specific)]
     if filtered:
         return filtered
     return _channel_default_district(source, cleaned) if allow_default else []

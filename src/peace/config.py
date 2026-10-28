@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     # Threats do not expire early; after this many minutes without updates, a staleness notice is shown
     stale_after_minutes: int = 30
     min_confidence: float = 0.6
+    # Telegram chat id that receives source-failure notices and may use /debug (0 = disabled)
+    admin_chat_id: int = 0
+    # Night mode window (Kyiv time, hours): only red alerts and all-clears trigger a push
+    quiet_start_hour: int = 23
+    quiet_end_hour: int = 7
+    # Changes arriving within this window are merged into one notification
+    batch_seconds: float = 4.0
 
 
 def _load_yaml(name: str) -> dict:

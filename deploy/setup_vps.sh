@@ -75,6 +75,7 @@ fi
 
 # --- 3. Clone repository (if not cloned yet) ---------------------------------
 if [ ! -d "$APP_DIR/.git" ]; then
+    $SUDO mkdir -p "$APP_DIR" && $SUDO chown "$RUN_USER" "$APP_DIR"
     say "Cloning $REPO_URL ($BRANCH) -> $APP_DIR"
     git clone -q -b "$BRANCH" "$REPO_URL" "$APP_DIR"
 fi
@@ -141,10 +142,10 @@ say "Environment and systemd service '$SERVICE' configured ($APP_DIR)"
 cat <<EOF
 
   Next steps:
-    1) Fill in credentials in .env:
+    1) Fill in .env: BOT_TOKEN (required), ADMIN_CHAT_ID (send /id to the bot), ALERTS_API_TOKEN:
          nano $APP_DIR/.env ${ENV_CREATED:+   (created from .env.example)}
 
-    2) Authenticate the userbot account once (phone + login code):
+    2) Optional: Telethon userbot login for faster push updates (phone + login code):
          ./deploy.sh login
 
     3) Start the bot and check logs:

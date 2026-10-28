@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import aiohttp
 
 from peace.config import regions, settings
+from peace.health import health
 from peace.models import AlertLevel, ParsedEvent
 from peace.parser.extractor import level_for_threats
 from peace.parser.normalizer import normalize
@@ -49,11 +50,7 @@ def _match_district(alert: dict) -> str | None:
     )
 
     if uid == "31" or oblast_uid == "31" or alert.get("location_title") == "м. Київ":
-        for key, info in regions().items():
-            if info["area"] == "kyiv_city" and key != "kyiv_all":
-                if any(alias in title for alias in info["aliases"]):
-                    return key
-        return "kyiv_all"
+        return "kyiv_all"  # Kyiv is a single zone
 
     if uid == "14" or oblast_uid == "14" or alert.get("location_oblast") == "Київська область":
         for key, info in regions().items():
@@ -156,6 +153,7 @@ async def run_official_poller(queue: asyncio.Queue[ParsedEvent]) -> None:
     headers = {"Authorization": f"Bearer {token}"}
     state: dict[str, tuple[AlertLevel, frozenset[str]]] = {}
     last_modified: str | None = None
+    first = True  # alerts already active at startup are state, not news
 
     async with aiohttp.ClientSession(headers=headers) as session:
         while True:
@@ -167,19 +165,25 @@ async def run_official_poller(queue: asyncio.Queue[ParsedEvent]) -> None:
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as r:
                     if r.status == 304:
+                        health.ok(OFFICIAL_SOURCE)
                         await asyncio.sleep(POLL_SECONDS)
                         continue
                     if r.status == 429:
                         log.warning("Official API rate limit hit (429), backing off for 30s")
+                        health.fail(OFFICIAL_SOURCE, "HTTP 429 rate limit")
                         await asyncio.sleep(30)
                         continue
                     r.raise_for_status()
                     last_modified = r.headers.get("Last-Modified", last_modified)
                     data = await r.json()
 
+                health.ok(OFFICIAL_SOURCE)
                 events, state = parse_active_alerts(data, state)
                 for ev in events:
+                    ev.preload = first
                     await queue.put(ev)
+                first = False
             except Exception as e:  # noqa: BLE001
                 log.warning("Official API error: %s", e)
+                health.fail(OFFICIAL_SOURCE, e)
             await asyncio.sleep(POLL_SECONDS)

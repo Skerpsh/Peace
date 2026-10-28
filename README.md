@@ -1,9 +1,26 @@
 # Project PEACE — Kyiv & Kyiv Oblast Air Alert Aggregator
 
-Real-time Telegram bot that monitors ~5 Telegram channels reporting air alerts,
-extracts structured threat data (district, alert level, threat type, direction),
+Real-time Telegram bot (Ukrainian UI) that monitors Telegram channels reporting air alerts,
+extracts structured threat data (zone, alert level, threat type, direction),
 cross-verifies sources against each other and the official alerts API, and delivers
 fresh, verified updates to subscribers.
+
+Zones: **Kyiv** is a single zone (neighbourhood names like Troieshchyna or Pozniaky map to it);
+**Kyiv Oblast** is split into its 7 raions plus an oblast-wide zone.
+
+## User Features
+
+- 📍 **Live status** — one pinned "Статус зараз" message per chat, edited in place on every change
+- 🔔 **Pushes only when it matters** — a new message is sent when the alert level changes or a new
+  threat type appears; confirmations, directions and sources only update the live status
+- 🧺 **Batching** — changes within `BATCH_SECONDS` are merged into one notification
+  (a burst of posts about one attack = one push, and other channels get time to confirm it)
+- 🗺 **Zone picker** — `/zones` inline keyboard, any combination of zones or "all zones"
+- 🌙 **Night mode** — `/quiet`: during `QUIET_START_HOUR`–`QUIET_END_HOUR` only red escalations and all-clears push
+- 🔗 Every alert links to the source posts
+
+Admin (`ADMIN_CHAT_ID`, learn it with `/id`): startup notice, alerts when a source fails for 10+ minutes
+and when it recovers, `/debug` (last unrecognised messages) and `/debug <text>` (how a text is parsed).
 
 ## Alert Level Mechanics (Kyiv / Kyiv Oblast)
 
@@ -17,7 +34,7 @@ fresh, verified updates to subscribers.
 ```mermaid
 flowchart LR
     subgraph Collect["1. Collection"]
-        TG["Telethon userbot<br/>(reads channels)"]
+        TG["Channel web poller<br/>(t.me/s, every 5s)<br/>+ optional Telethon"]
         API["Official Alerts API<br/>(alerts.in.ua)"]
     end
     subgraph Parse["2. Parsing"]
@@ -33,10 +50,12 @@ flowchart LR
     E --> AG
     API --> AG
     SC --> DB
-    SC --> BOT
+    SC --> NT["notifier<br/>(batching, push policy,<br/>live status)"] --> BOT
 ```
 
-> Why two Telegram clients: standard Bot API **cannot read third-party channels**, so collection uses a user account via Telethon (MTProto), while user interaction uses a standard bot via aiogram.
+> Collection: the Bot API **cannot read third-party channels**, so the primary collector polls the
+> public web previews `https://t.me/s/<channel>` (no login needed). If an authorised Telethon userbot
+> session exists, MTProto push updates are attached as well. User interaction uses a standard bot via aiogram.
 
 ## Project Structure
 
@@ -44,7 +63,7 @@ flowchart LR
 Project_PEACE/
 ├── config/
 │   ├── channels.yaml         # Source channels and their trust weights
-│   ├── regions.yaml          # Kyiv & Oblast districts + text aliases
+│   ├── regions.yaml          # Zones (Kyiv + Oblast raions) + text aliases
 │   └── threats.yaml          # Threat types, alert levels, and keywords
 ├── deploy/
 │   ├── setup_vps.sh          # One-time VPS setup (systemd, venv, deploy key)
@@ -56,8 +75,9 @@ Project_PEACE/
 │   ├── login.py              # One-time interactive Telethon userbot login
 │   ├── config.py             # Settings loader (.env + YAML)
 │   ├── models.py             # Data models
+│   ├── health.py             # Source failure tracking -> admin notices
 │   ├── collector/
-│   │   ├── telegram_listener.py  # Telethon: new and edited channel messages
+│   │   ├── telegram_listener.py  # t.me/s web poller (+ optional Telethon push)
 │   │   └── official_api.py       # Official alerts.in.ua poller
 │   ├── parser/
 │   │   ├── normalizer.py     # Text normalization
@@ -65,14 +85,26 @@ Project_PEACE/
 │   ├── analyzer/
 │   │   ├── scoring.py        # Multi-source confidence calculation
 │   │   └── aggregator.py     # Stateful per-district event aggregation
-│   ├── storage/db.py         # SQLite storage for subscribers and event logs
+│   ├── storage/db.py         # SQLite: subscribers, user settings, events, ignored messages
 │   └── bot/
-│       ├── handlers.py       # /start /status /districts /subscribe /stop
-│       └── formatter.py      # User-facing message formatting
+│       ├── handlers.py       # /start /status /zones /quiet /stop /help, admin /id /debug
+│       ├── notifier.py       # Push policy, night mode, live status, safe sending
+│       └── formatter.py      # User-facing message formatting (Ukrainian)
 └── tests/
+    ├── corpus.yaml           # Regression corpus: real messages -> expected parse
+    ├── test_corpus.py
     ├── test_extractor.py
-    └── test_aggregator.py
+    ├── test_aggregator.py
+    ├── test_official_api.py
+    └── test_bot.py           # Zones, push policy, health, storage, delivery
 ```
+
+## Improving the Parser
+
+1. Send `/debug` to the bot (admin only) to see recent messages the parser ignored.
+2. Check a text with `/debug <text>`.
+3. Add the message to `tests/corpus.yaml` with the expected result, fix `config/threats.yaml` or
+   `config/regions.yaml`, and run `pytest`.
 
 ## Local Development
 
@@ -80,18 +112,29 @@ Project_PEACE/
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env                   # Fill in credentials
-PYTHONPATH=src python -m peace.login   # One-time: interactive phone + code login
+PYTHONPATH=src python -m peace.login   # Optional: Telethon login for faster push updates
 PYTHONPATH=src python -m peace.main    # Start the bot
+pytest                                 # Run tests
 ```
 
-## VPS Deployment
+## Deploy from Your PC (over SSH)
+
+```bash
+cp deploy/deploy.env.example deploy/deploy.env   # set VPS_HOST, VPS_USER
+./deploy.sh setup      # once: clone on VPS, venv, systemd (prints a GitHub deploy key to add)
+./deploy.sh env        # once: fill BOT_TOKEN, ADMIN_CHAT_ID, ALERTS_API_TOKEN on the VPS
+./deploy.sh            # every release: git push + pull, tests, restart, auto-rollback on failure
+./deploy.sh logs       # also: status, restart, login, ssh
+```
+
+## VPS Deployment (directly on the server)
 
 Run directly on the VPS inside the cloned repository (e.g. `/opt/Peace`):
 
 ```bash
 ./deploy.sh            # First run sets up venv, .env, and systemd; subsequent runs pull, test, and restart
 nano .env              # Fill in TG_API_ID, TG_API_HASH, BOT_TOKEN
-./deploy.sh login      # One-time interactive userbot login
+./deploy.sh login      # Optional: Telethon userbot login (web poller works without it)
 ./deploy.sh restart    # Start/restart the peace-bot systemd service
 ./deploy.sh logs       # Follow live logs
 ./deploy.sh status     # Check systemd service status

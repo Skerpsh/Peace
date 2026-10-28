@@ -6,14 +6,17 @@
 #   1) DIRECTLY ON VPS (inside /opt/Peace, without deploy/deploy.env):
 #        ./deploy.sh            pull from GitHub, run tests, and restart service
 #        ./deploy.sh setup      initial environment & systemd service setup
-#        ./deploy.sh login      one-time interactive Telegram userbot login
+#        ./deploy.sh login      optional Telethon userbot login (web poller works without it)
+#        ./deploy.sh env        edit .env
 #        ./deploy.sh status     show peace-bot systemd service status
 #        ./deploy.sh logs       follow live service logs (Ctrl+C to exit)
 #        ./deploy.sh restart    restart peace-bot service
 #
 #   2) FROM LOCAL MACHINE OVER SSH (when deploy/deploy.env has a real VPS_HOST):
+#        ./deploy.sh setup      first-time install on a fresh VPS (clone, venv, systemd)
+#        ./deploy.sh env        edit .env on the VPS
 #        ./deploy.sh            git push + remote update on VPS over SSH
-#        ./deploy.sh status|logs|restart|ssh
+#        ./deploy.sh status|logs|restart|login|ssh
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -41,6 +44,9 @@ if [ -z "${VPS_HOST:-}" ] || [ "$VPS_HOST" = "1.2.3.4" ]; then
         login)
             PYTHONPATH=src .venv/bin/python -m peace.login
             ;;
+        env)
+            "${EDITOR:-nano}" .env
+            ;;
         status)
             systemctl status "$SERVICE" --no-pager
             ;;
@@ -60,7 +66,7 @@ if [ -z "${VPS_HOST:-}" ] || [ "$VPS_HOST" = "1.2.3.4" ]; then
             bash deploy/update.sh "$BRANCH"
             ;;
         *)
-            sed -n '6,12p' "$0"
+            sed -n '6,13p' "$0"
             exit 1
             ;;
     esac
@@ -81,6 +87,13 @@ case "${1:-deploy}" in
     logs)    remote_tty "journalctl -u $SERVICE -f -n 50" ;;
     restart) remote_tty "sudo systemctl restart $SERVICE && sleep 3 && systemctl status $SERVICE --no-pager" ;;
     ssh)     remote_tty "cd $VPS_DIR && exec \$SHELL -l" ;;
+    env)     remote_tty "\${EDITOR:-nano} $VPS_DIR/.env" ;;
+    login)   remote_tty "cd $VPS_DIR && PYTHONPATH=src .venv/bin/python -m peace.login" ;;
+    setup)
+        # The repo is not on the VPS yet, so ship the setup script itself
+        scp -q -P "$VPS_PORT" deploy/setup_vps.sh "$VPS_USER@$VPS_HOST:/tmp/peace_setup_vps.sh"
+        remote_tty "bash /tmp/peace_setup_vps.sh '$(git remote get-url origin)' '$BRANCH' '$VPS_DIR'; rm -f /tmp/peace_setup_vps.sh"
+        ;;
     deploy|update)
         if [ -n "$(git status --porcelain)" ]; then
             echo "WARNING: Uncommitted local changes will not be deployed:"
@@ -103,7 +116,7 @@ case "${1:-deploy}" in
         remote_cmd "cd $VPS_DIR && bash deploy/update.sh $BRANCH"
         ;;
     *)
-        sed -n '14,16p' "$0"
+        sed -n '15,19p' "$0"
         exit 1
         ;;
 esac
