@@ -20,6 +20,7 @@ from peace.bot.formatter import LEVEL_ICON, district_name
 from peace.bot.notifier import Notifier
 from peace.config import regions, settings
 from peace.models import RawMessage
+from peace.monitor import Monitor
 from peace.parser.extractor import extract
 from peace.storage.db import Database
 
@@ -84,7 +85,7 @@ def _zones_text(zones: set[str]) -> str:
     return "🗺 <b>Зони сповіщень</b>\n\nНатисніть, щоб увімкнути або вимкнути зону:"
 
 
-def build_router(db: Database, notifier: Notifier) -> Router:
+def build_router(db: Database, notifier: Notifier, monitor: Monitor) -> Router:
     router = Router()
     admin_id = settings().admin_chat_id
 
@@ -144,9 +145,24 @@ def build_router(db: Database, notifier: Notifier) -> Router:
     async def chat_id(m: Message) -> None:
         await m.answer(f"Ваш chat id: <code>{m.chat.id}</code>")
 
+    def is_admin(m: Message) -> bool:
+        return bool(admin_id) and m.chat.id == admin_id
+
+    @router.message(Command("stats"), is_admin)
+    async def stats(m: Message) -> None:
+        await m.answer(await monitor.report(advance=False))
+
+    @router.message(Command("today"), is_admin)
+    async def today(m: Message) -> None:
+        await m.answer(await monitor.daily_summary(datetime.now(timezone.utc), final=False))
+
+    @router.message(Command("health"), is_admin)
+    async def health_(m: Message) -> None:
+        await m.answer(monitor.health_text())
+
     @router.message(Command("debug"))
     async def debug(m: Message, command: CommandObject) -> None:
-        if not admin_id or m.chat.id != admin_id:
+        if not is_admin(m):
             return
         if command.args:
             ev = extract(RawMessage(source="debug", message_id=0, text=command.args,

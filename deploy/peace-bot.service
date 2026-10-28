@@ -1,0 +1,19 @@
+# The bot itself. Install: see "First install" in deploy/README.md.
+[Unit]
+Description=Project PEACE — Air Alert Aggregator Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/Peace
+Environment=PYTHONPATH=/opt/Peace/src
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/Peace/.venv/bin/python -m peace.main
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Install]
+WantedBy=multi-user.target

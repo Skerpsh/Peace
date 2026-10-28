@@ -12,9 +12,10 @@ from peace.bot.handlers import COMMANDS, build_router
 from peace.bot.notifier import Notifier
 from peace.collector.official_api import run_official_poller
 from peace.collector.telegram_listener import run_listener
-from peace.config import channels, settings
+from peace.config import settings
 from peace.health import health
 from peace.models import ParsedEvent, RawMessage, Situation
+from peace.monitor import Monitor
 from peace.parser.extractor import extract
 from peace.storage.db import Database
 
@@ -92,7 +93,6 @@ async def _startup(
     agg: Aggregator,
     db: Database,
     notifier: Notifier,
-    notify_admin,
 ) -> None:
     """Once startup preload finishes, mark it delivered and refresh everyone's live status (no pushes)."""
     await preload_done.wait()
@@ -107,10 +107,6 @@ async def _startup(
     if not recipients:
         log.warning("No subscribers in DB yet! Open your bot in Telegram and send /start")
     await notifier.refresh_all()
-    await notify_admin(
-        f"🚀 PEACE запущено: {len(channels())} каналів, {len(recipients)} підписників, "
-        f"{len(active)} активних зон"
-    )
 
     while True:
         await asyncio.sleep(LIVE_REFRESH_SEC)
@@ -128,17 +124,10 @@ async def main() -> None:
 
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     notifier = Notifier(bot, db, agg)
+    monitor = Monitor(bot, db, agg, notifier, health)
     dp = Dispatcher()
-    dp.include_router(build_router(db, notifier))
+    dp.include_router(build_router(db, notifier, monitor))
     await bot.set_my_commands(COMMANDS)
-
-    async def notify_admin(text: str) -> None:
-        if not cfg.admin_chat_id:
-            return
-        try:
-            await bot.send_message(cfg.admin_chat_id, text)
-        except Exception as e:  # noqa: BLE001
-            log.warning("Admin notice failed: %s", e)
 
     raw_q: asyncio.Queue[RawMessage] = asyncio.Queue()
     event_q: asyncio.Queue[ParsedEvent] = asyncio.Queue()
@@ -149,8 +138,9 @@ async def main() -> None:
         run_official_poller(event_q),
         pipeline(raw_q, event_q, db),
         analyzer_loop(event_q, agg, db, notifier),
-        _startup(preload_done, raw_q, event_q, agg, db, notifier, notify_admin),
-        health.watch(notify_admin),
+        _startup(preload_done, raw_q, event_q, agg, db, notifier),
+        health.watch(monitor.send),
+        monitor.run(),
         dp.start_polling(bot),
     )
 

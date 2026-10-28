@@ -19,8 +19,9 @@ Zones: **Kyiv** is a single zone (neighbourhood names like Troieshchyna or Pozni
 - 🌙 **Night mode** — `/quiet`: during `QUIET_START_HOUR`–`QUIET_END_HOUR` only red escalations and all-clears push
 - 🔗 Every alert links to the source posts
 
-Admin (`ADMIN_CHAT_ID`, learn it with `/id`): startup notice, alerts when a source fails for 10+ minutes
-and when it recovers, `/debug` (last unrecognised messages) and `/debug <text>` (how a text is parsed).
+Admin (`ADMIN_CHAT_ID`, learn it with `/id`): a silent report every 15 minutes and a daily summary,
+alarms when a source fails for 10+ minutes, the disk or memory runs low or the backup is too old,
+`/stats`, `/today`, `/health`, `/debug` (last unrecognised messages) and `/debug <text>` (how a text is parsed).
 
 ## Alert Level Mechanics (Kyiv / Kyiv Oblast)
 
@@ -65,17 +66,21 @@ Project_PEACE/
 │   ├── channels.yaml         # Source channels and their trust weights
 │   ├── regions.yaml          # Zones (Kyiv + Oblast raions) + text aliases
 │   └── threats.yaml          # Threat types, alert levels, and keywords
-├── deploy/
-│   ├── setup_vps.sh          # One-time VPS setup (systemd, venv, deploy key)
-│   ├── update.sh             # VPS updater (git fetch, pytest, restart, auto-rollback)
-│   └── deploy.env.example    # Optional config template for remote SSH deploy
-├── deploy.sh                 # One-command deploy & service manager
+├── .github/workflows/
+│   ├── ci.yml                # Tests on every push and pull request
+│   └── release.yml           # Version tag -> GitHub release with the list of changes
+├── deploy/                   # Server operations, see deploy/README.md
+│   ├── deploy.sh             # Pull, backup, install, test, restart, check, release tag
+│   ├── backup.sh             # SQLite backup, rotation, Healthchecks.io, off-site copy
+│   ├── peace-bot.service     # systemd unit of the bot
+│   └── peace-backup.{service,timer}  # daily backup at 04:00
 ├── src/peace/
 │   ├── main.py               # Entry point running all pipeline components
 │   ├── login.py              # One-time interactive Telethon userbot login
 │   ├── config.py             # Settings loader (.env + YAML)
 │   ├── models.py             # Data models
 │   ├── health.py             # Source failure tracking -> admin notices
+│   ├── monitor.py            # Admin reports every 15 min, daily summary, alarms
 │   ├── collector/
 │   │   ├── telegram_listener.py  # t.me/s web poller (+ optional Telethon push)
 │   │   └── official_api.py       # Official alerts.in.ua poller
@@ -117,25 +122,10 @@ PYTHONPATH=src python -m peace.main    # Start the bot
 pytest                                 # Run tests
 ```
 
-## Deploy from Your PC (over SSH)
+## Server
+
+Deploy, first install, backups, monitoring and releases: [deploy/README.md](deploy/README.md).
 
 ```bash
-cp deploy/deploy.env.example deploy/deploy.env   # set VPS_HOST, VPS_USER
-./deploy.sh setup      # once: clone on VPS, venv, systemd (prints a GitHub deploy key to add)
-./deploy.sh env        # once: fill BOT_TOKEN, ADMIN_CHAT_ID, ALERTS_API_TOKEN on the VPS
-./deploy.sh            # every release: git push + pull, tests, restart, auto-rollback on failure
-./deploy.sh logs       # also: status, restart, login, ssh
-```
-
-## VPS Deployment (directly on the server)
-
-Run directly on the VPS inside the cloned repository (e.g. `/opt/Peace`):
-
-```bash
-./deploy.sh            # First run sets up venv, .env, and systemd; subsequent runs pull, test, and restart
-nano .env              # Fill in TG_API_ID, TG_API_HASH, BOT_TOKEN
-./deploy.sh login      # Optional: Telethon userbot login (web poller works without it)
-./deploy.sh restart    # Start/restart the peace-bot systemd service
-./deploy.sh logs       # Follow live logs
-./deploy.sh status     # Check systemd service status
+cd /opt/Peace && deploy/deploy.sh
 ```

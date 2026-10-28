@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily PEACE database backup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+# Runs at the next boot if the server was off at 04:00.
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

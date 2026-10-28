@@ -1,0 +1,12 @@
+[Unit]
+Description=PEACE database backup
+
+[Service]
+Type=oneshot
+# Change KEEP (how many backups to keep) or MIN_FREE_MB here if needed.
+Environment=KEEP=7
+Environment=MIN_FREE_MB=200
+# The off-site copy's settings, see deploy/README.md (optional).
+EnvironmentFile=-/etc/peace/backup.env
+# The Healthchecks.io ping URL goes into a drop-in, see deploy/README.md.
+ExecStart=/opt/Peace/deploy/backup.sh

@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS events (
     direction  TEXT,
     raw_text   TEXT
 );
+CREATE TABLE IF NOT EXISTS daily (
+    day  TEXT PRIMARY KEY,   -- Kyiv date, YYYY-MM-DD
+    data TEXT                -- JSON totals of the day, for comparing with the next one
+);
 CREATE TABLE IF NOT EXISTS ignored (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     source     TEXT,
@@ -158,6 +162,21 @@ class Database:
             "INSERT INTO ignored (source, message_id, ts, text) VALUES (?, ?, ?, ?)",
             (msg.source, msg.message_id, msg.date.isoformat(), msg.text),
         )
+        await self.conn.commit()
+
+    async def count_since(self, table: str, since: str, until: str = "9999") -> int:
+        """Rows of `events` or `ignored` with since <= ts < until (ISO strings, UTC)."""
+        assert table in ("events", "ignored")
+        cur = await self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE ts >= ? AND ts < ?", (since, until))
+        return (await cur.fetchone())[0]
+
+    async def daily(self, day: str) -> dict | None:
+        cur = await self.conn.execute("SELECT data FROM daily WHERE day = ?", (day,))
+        row = await cur.fetchone()
+        return json.loads(row[0]) if row else None
+
+    async def save_daily(self, day: str, data: dict) -> None:
+        await self.conn.execute("INSERT OR REPLACE INTO daily VALUES (?, ?)", (day, json.dumps(data)))
         await self.conn.commit()
 
     async def recent_ignored(self, limit: int = 10) -> list[tuple[str, int, str, str]]:

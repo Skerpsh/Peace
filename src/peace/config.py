@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     quiet_end_hour: int = 7
     # Changes arriving within this window are merged into one notification
     batch_seconds: float = 4.0
+    # Admin monitoring: a silent report every N minutes, problem checks every N seconds
+    monitor_report_minutes: int = 15
+    monitor_check_seconds: int = 60
+    backup_dir: str = "/var/backups/peace"
+    backup_max_age_hours: int = 26
 
 
 def _load_yaml(name: str) -> dict:

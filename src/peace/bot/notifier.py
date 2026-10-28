@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 
 from aiogram import Bot
@@ -49,6 +50,7 @@ class Notifier:
         self.agg = agg
         self.last_sent: dict[str, Situation] = {}
         self.ready = False   # no deliveries until the startup state is synced
+        self.counters: Counter[str] = Counter()   # push / failed / blocked, read by the monitor
 
     def sync(self) -> None:
         """Marks the current aggregated state as already delivered (used after startup preload)."""
@@ -74,9 +76,11 @@ class Notifier:
                     if r.wants(d) and should_push(old[d], s, quiet=r.quiet and night)]
             if push:
                 try:
-                    await self._safe(r.chat_id, lambda r=r, push=push: self.bot.send_message(
-                        r.chat_id, format_update(push), disable_web_page_preview=True))
+                    if await self._safe(r.chat_id, lambda r=r, push=push: self.bot.send_message(
+                            r.chat_id, format_update(push), disable_web_page_preview=True)):
+                        self.counters["push"] += 1
                 except Exception as e:  # noqa: BLE001
+                    self.counters["failed"] += 1
                     log.warning("Push to %s failed: %s", r.chat_id, e)
             await self.refresh_live(r, active)
 
@@ -135,6 +139,7 @@ class Notifier:
                 await asyncio.sleep(e.retry_after)
             except TelegramForbiddenError:
                 log.info("Chat %s blocked the bot, removing it", chat_id)
+                self.counters["blocked"] += 1
                 await self.db.forget(chat_id)
                 return None
         return None

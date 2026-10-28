@@ -6,4 +6,3 @@ __pycache__/
 *.session-journal
 data/
 .pytest_cache/
-deploy/deploy.env
