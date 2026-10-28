@@ -1,0 +1,41 @@
+name: Misparsed message
+description: The bot missed, misread or invented an alert from a channel post
+labels: [parser]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Each report becomes a test case in `tests/corpus.yaml`.
+  - type: input
+    id: link
+    attributes:
+      label: Link to the post
+      placeholder: "https://t.me/kyiv_golovne/107342"
+  - type: textarea
+    id: text
+    attributes:
+      label: Text of the post
+      description: Paste it exactly, with emoji.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong?
+      options:
+        - An alert was missed
+        - Wrong zone
+        - Wrong threat type or level
+        - A false alert
+        - A missed or false all-clear
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should the bot have understood?
+      placeholder: "Zone: Київ. Threat: дрони. Not an all-clear."
+    validations:
+      required: true
