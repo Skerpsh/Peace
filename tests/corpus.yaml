@@ -22,3 +22,40 @@
   ignored: true
 - text: "🔴 Тривога у Харківській області"
   ignored: true
+# --- From real posts, labelled with scripts/label_corpus.py and checked by hand (2026-10-29) ---
+- text: "🔴Російський дрон влучив у перон вокзалу в Дніпрі: 13 загиблих, 14 поранених, — Зеленський\n\nУдар припав на платформу"
+  source: irpin_bucha_gostomel
+  ignored: true
+- text: "🚀⁉️ Діє висока загроза балістичного удару, тож у періоди з 21:00 до 23:00 варто бути в безпечних місцях\n\nМасований удар балістикою може прийтися по ТЕЦ-4/5/6 та котельням Києва"
+  source: kievinfo_kyiv
+  ignored: true
+- text: "🤯Батьків просять не водити дітей до дитсадку взимку: такі оголошення помітили у дитсадках столиці.\n\nПричина – можлива відсутність тепла та гарячої води."
+  source: kievinfo_kyiv
+  ignored: true
+- text: "‼️ Київ: через аварію у частині Голосіївської, Соломянського і Шевченківського районів відсутнє електропостачання."
+  source: VA_Kyiv
+  ignored: true
+- text: "🔴Російські «Герані-5» вже розганяються до 1000 км/год. Такі швидкості фіксували під час маневрування БПЛА, — заявив радник президента «Флеш»."
+  source: irpin_bucha_gostomel
+  ignored: true
+- text: "🏍 Реактивні БпЛА повз Яворницьке та Обухівки у напрямку Дніпра"
+  source: kpszsu
+  ignored: true
+- text: "✅ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ ✅"
+  source: kievinfo_kyiv
+  districts: [kyiv_all]
+  all_clear: true
+- text: "⚠️❗️УВАГА! ПОВІТРЯНА ТРИВОГА! Всі в УКРИТТЯ!\n\nДетальний радар 👉🏽 @kievinform_ua1"
+  source: kievinfo_kyiv
+  districts: [kyiv_all]
+  level: alert
+# "Red" clears only missile threats: drones, if reported, stay active
+- text: "🫡 Фастівський район — відбій червоної тривоги!"
+  source: kyiv_golovne
+  districts: [fastivskyi]
+  level: none
+  all_clear: false
+- text: "🏍 Реактивний БпЛАз з Чернігівщини повз н.п.Бобровиця на Київщину"
+  source: kpszsu
+  districts: [oblast_all]
+  level: yellow

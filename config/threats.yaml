@@ -35,7 +35,7 @@ markers:
   # only that threat type is cleared ("missile threat cleared, UAVs remain" -> red -> yellow).
   # If no threat type is mentioned, it is treated as a full all-clear ("all clear").
   clear:  ["🟢", "✅ ✅ ✅", "відбій", "отбой", "минул", "минувал", "миновал", "знято", "знята", "снят",
-           "відсутн", "отсутств", "приземл", "посадк", "без загроз", "без повітряних загроз",
+           "загрози відсутн", "загроза відсутн", "угрозы отсутств", "угроза отсутств", "приземл", "посадк", "без загроз", "без повітряних загроз",
            "локаційно чисто", "all clear", "cleared"]
   # Target movement phrases in monitoring channels (imply UAV/target tracking when a district is present)
   movement: ["курсом на", "курс на", "тримає курс", "йде на", "летить", "суне", "у ваш бік",
@@ -75,6 +75,12 @@ ignore_phrases:
   - "мобілізував"
   - "збили насмерть"
   - "середньодобова температура"
+  - "загибл"
+  - "загинул"
+  - "поранен"
+  - "постраждал"
+  - "може прийтися"
+  - "заявив радник"
 
 # Channel signature / promo lines stripped before parsing
 strip_line_markers:

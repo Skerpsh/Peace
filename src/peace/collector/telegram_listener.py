@@ -195,11 +195,17 @@ async def _optional_telethon_listener(raw_usernames: list[str], emit_fn) -> None
             await client.disconnect()
             return
 
+        from telethon.utils import get_peer_id
+
         valid_chats = []
+        # Channels with collectible usernames have chat.username = None; keep the configured name
+        # so sources match channels.yaml and the web poller (weights, default district, dedup).
+        names: dict[int, str] = {}
         for uname in raw_usernames:
             try:
                 entity = await client.get_entity(uname)
                 valid_chats.append(entity)
+                names[get_peer_id(entity)] = uname
                 try:
                     await client(JoinChannelRequest(entity))
                 except Exception:  # noqa: BLE001
@@ -213,14 +219,12 @@ async def _optional_telethon_listener(raw_usernames: list[str], emit_fn) -> None
 
         @client.on(events.NewMessage(chats=valid_chats))
         async def on_new(event):
-            chat = await event.get_chat()
-            source = getattr(chat, "username", None) or str(event.chat_id)
+            source = names.get(event.chat_id, str(event.chat_id))
             await emit_fn(source, event.id, event.raw_text or "", event.date, False, False)
 
         @client.on(events.MessageEdited(chats=valid_chats))
         async def on_edit(event):
-            chat = await event.get_chat()
-            source = getattr(chat, "username", None) or str(event.chat_id)
+            source = names.get(event.chat_id, str(event.chat_id))
             await emit_fn(source, event.id, event.raw_text or "", event.date, True, False)
 
         log.info("Telethon push listener attached alongside web poller")

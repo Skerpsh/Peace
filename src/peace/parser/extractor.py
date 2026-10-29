@@ -17,8 +17,9 @@ _OTHER_REGIONS = (
 
 # Prevents "київська" / "київщина" from matching kyiv_all ("київ")
 _OBLAST_ADJ_RE = re.compile(r"ки(?:їв|єв|ев)(?:ськ|ск|щин)\w*")
-# Prevents "Подільському районі Одещини" from matching Kyiv's Podilskyi District
-_ODESA_PODIL_RE = re.compile(r"подільськ\w+\s+район\w*\s+одещин\w*")
+# Place names elsewhere that contain Kyiv aliases: Podilskyi raion of Odesa Oblast,
+# Obukhivka near Dnipro ("обухів")
+_FALSE_ALIAS_RE = re.compile(r"подільськ\w+\s+район\w*\s+одещин\w*|обухівк\w*")
 
 
 def _clean_lines(raw_text: str) -> str:
@@ -28,8 +29,12 @@ def _clean_lines(raw_text: str) -> str:
     kept: list[str] = []
     for line in raw_text.splitlines():
         low = line.lower()
-        if any(m in low for m in strip_markers):
-            continue
+        # Cut from the marker on: web-poller posts often arrive as one line with the promo at the end
+        cut = min((low.find(m) for m in strip_markers if m in low), default=-1)
+        if cut >= 0:
+            line = line[:cut]
+            if not re.search(r"\w", line):
+                continue
         kept.append(line)
     return normalize("\n".join(kept))
 
@@ -49,7 +54,7 @@ def _channel_default_district(source: str, text: str) -> list[str]:
 
 def _find_districts(text: str, source: str = "", allow_default: bool = True) -> list[str]:
     reg = regions()
-    cleaned = _ODESA_PODIL_RE.sub(" ", text)
+    cleaned = _FALSE_ALIAS_RE.sub(" ", text)
     text_for_city = _OBLAST_ADJ_RE.sub(" ", cleaned)
     found = []
     for key, info in reg.items():
