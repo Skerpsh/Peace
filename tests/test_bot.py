@@ -76,6 +76,7 @@ def test_db_migrates_old_kyiv_districts_and_lists_recipients(tmp_path):
         await db.set_quiet(2, True)
         rs = {r.chat_id: r for r in await db.recipients()}
         assert rs[2].quiet and rs[2].wants("buchanskyi") and not rs[2].wants("kyiv_all")
+        assert rs[2].wants("oblast_all")                     # whole-oblast alert reaches raion subscribers
         await db.forget(2)
         assert [r.chat_id for r in await db.recipients()] == [1]
         await db.conn.close()

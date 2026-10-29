@@ -7,6 +7,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from peace.config import regions
 from peace.models import ParsedEvent, RawMessage
 
 SCHEMA = """
@@ -60,7 +61,10 @@ class Recipient:
     status_msg_id: int | None = None
 
     def wants(self, district: str) -> bool:
-        return "*" in self.zones or district in self.zones
+        if "*" in self.zones or district in self.zones:
+            return True
+        # An alert for the whole oblast also concerns everyone watching one of its raions
+        return district == "oblast_all" and any(regions().get(z, {}).get("area") == "kyiv_oblast" for z in self.zones)
 
 
 class Database:
