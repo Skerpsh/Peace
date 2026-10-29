@@ -91,3 +91,13 @@
   source: kyiv_golovne
   districts: [buchanskyi]
   level: yellow
+# Forecasts of a possible strike are not a current threat
+- text: "🔴🔴🔴УВАГА! Є інформація про підготовку рф удару балістикою, – Зеленський.\n\n❗️➡️ Підписатися\n24/7 | Ірпінь, Буча, Гостомель, Ворзель, Бучанський район ✅"
+  source: irpin_bucha_gostomel
+  ignored: true
+- text: "🔴 Є попередження про можливий балістичний обстріл Києва та агломерації цієї ночі."
+  source: bycanskyy
+  ignored: true
+- text: "Є інфа, що рф може атакувати Київ та область балістикою цієї та наступної ночі"
+  source: kyiv_golovne
+  ignored: true
