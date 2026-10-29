@@ -160,10 +160,16 @@ def _fallback_level(text: str) -> AlertLevel:
 
 
 def _find_direction(text: str) -> str | None:
+    """Where targets are heading: zone names when the destination is one of ours, else its first words."""
     for pat in threats()["direction_patterns"]:
         m = re.search(pat, text)
         if m:
-            return m.group(1).strip()[:60]
+            raw = m.group(1).strip()
+            zones = _find_districts(raw, allow_default=False)
+            if zones:
+                return ", ".join(regions()[k]["name"] for k in zones)
+            words = " ".join(raw.split()[:2])  # the capture runs on into the rest of the sentence
+            return (words[:1].upper() + words[1:])[:60] or None
     return None
 
 

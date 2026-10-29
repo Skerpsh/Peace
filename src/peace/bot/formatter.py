@@ -104,6 +104,7 @@ def format_group(group: list[Situation], now: datetime | None = None) -> str:
         f"Статус: <b>{LEVEL_NAME[first.level]}</b>",
         f"Зона: <b>{_zones(group)}</b>",
         f"Небезпека: {_names(_ordered(first.threats)) or 'уточнюється'}",
+        "Траєкторія руху: " + escape("; ".join(sorted({s.direction for s in group if s.direction})) or "невідомо"),
         f"Початок: {_hhmm(since)} ({duration(since, now)})" if since else "Початок: —",
         f"Достовірність: {int(confidence * 100)}%" + ("" if confirmed else " ❔ ще не підтверджено"),
         f"Остання інформація: {_hhmm(updated)}",
@@ -112,9 +113,6 @@ def format_group(group: list[Situation], now: datetime | None = None) -> str:
         lines.append(f"⏳ оновлень немає {duration(updated, now)} — статус може бути застарілим")
     if cleared:
         lines.append(f"✅ Минуло: {_names(cleared)}")
-    directions = sorted({s.direction for s in group if s.direction})
-    if directions:
-        lines.append(f"Напрямок: {escape('; '.join(directions))}")
     lines.append(f"Джерела: {_sources(group)}")
     return "\n".join(lines)
 

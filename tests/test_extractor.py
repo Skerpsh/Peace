@@ -14,7 +14,7 @@ def test_shahed_is_yellow():
     assert ev.level is AlertLevel.YELLOW
     assert "shahed" in ev.threats
     assert "brovarskyi" in ev.districts
-    assert ev.direction and ev.direction.startswith("київ")
+    assert ev.direction == "Київ"
 
 
 def test_ballistic_is_red_and_removes_generic_missile():
