@@ -32,5 +32,7 @@ def test_reposts_do_not_confirm_and_small_samples_get_no_weight():
     scores = sw.score([_a("a", 0, "шахеди"), _a("b", 1, "шахеди")])  # same text = one post
     assert scores["a"].confirmed == 0
     assert sw.suggest(scores["a"]) is None
-    assert sw.suggest(sw.Score(50, 0.97, 1.0)) == 0.9
-    assert sw.suggest(sw.Score(50, 0.1, 1.0)) == 0.3
+    assert sw.suggest(sw.Score(50, 1.0, 1.0)) == 0.55   # never confirms itself (MIN_CONFIDENCE 0.6)
+    assert sw.suggest(sw.Score(50, 0.0, 1.0)) == 0.3
+    two = 1 - (1 - sw.suggest(sw.Score(50, 0.6, 1.0))) ** 2
+    assert two >= 0.6                                    # two average channels confirm each other

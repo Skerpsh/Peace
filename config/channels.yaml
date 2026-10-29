@@ -1,5 +1,7 @@
 # Source Telegram channels.
-# weight: base trust score (0..1).
+# weight: base trust score (0..1). Unofficial channels stay at or below 0.55, under MIN_CONFIDENCE
+#   (0.6): one of them alone is "not confirmed yet" and cannot clear an alert; two of them can.
+#   Values come from scripts/source_weights.py (share of a channel's alerts other sources confirmed).
 # official: true — official military/city administration channel.
 # default_district: fallback district key when a local channel posts an alert/clear
 #   without explicitly naming the city/district in the message text.
@@ -15,18 +17,18 @@ channels:
     weight: 0.95
     official: true
   - username: kievinfo_kyiv           # Kyiv news & monitoring
-    weight: 0.65
+    weight: 0.45
     official: false
     default_district: kyiv_all
   - username: kyiv_golovne            # Kyiv news & monitoring
-    weight: 0.65
+    weight: 0.47
     official: false
     default_district: kyiv_all
   - username: irpin_bucha_gostomel    # Irpin / Bucha / Hostomel monitoring
-    weight: 0.65
+    weight: 0.5
     official: false
     default_district: buchanskyi
   - username: bycanskyy               # Bucha district monitoring
-    weight: 0.65
+    weight: 0.49
     official: false
     default_district: buchanskyi

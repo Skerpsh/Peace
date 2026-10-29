@@ -62,8 +62,9 @@ def score(alerts: list[Alert]) -> dict[str, Score]:
 
 
 def suggest(s: Score) -> float | None:
-    """Confirmed share, kept inside the range unofficial channels use."""
-    return None if s.alerts < MIN_ALERTS else round(min(0.9, max(0.3, s.confirmed)), 2)
+    """Confirmed share mapped onto 0.3..0.55: below MIN_CONFIDENCE (0.6), so one unofficial channel
+    alone stays "not confirmed" while any two of them (0.45 + 0.45 -> 0.70) confirm each other."""
+    return None if s.alerts < MIN_ALERTS else round(0.3 + 0.25 * s.confirmed, 2)
 
 
 def load(db: str) -> list[Alert]:
