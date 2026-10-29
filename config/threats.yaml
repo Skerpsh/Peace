@@ -9,7 +9,7 @@
 threats:
   ballistic:
     level: red
-    words: ["балісти", "баллисти", "іскандер", "искандер", "кинджал", "кинжал", "ballistic", "iskander", "kinzhal"]
+    words: ["балісти", "баллисти", "балисти", "балітс", "іскандер", "искандер", "кинджал", "кинжал", "ballistic", "iskander", "kinzhal"]
   cruise_missile:
     level: red
     words: ["крилат", "крылат", "калібр", "калибр", "х-101", "х-555", "cruise missile", "kalibr", "kh-101"]

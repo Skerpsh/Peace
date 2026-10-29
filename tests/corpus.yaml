@@ -101,3 +101,13 @@
 - text: "Є інфа, що рф може атакувати Київ та область балістикою цієї та наступної ночі"
   source: kyiv_golovne
   ignored: true
+# Typos in a hurry still mean ballistics
+- text: "ЗАГРОЗА БАЛІТСИКИ"
+  source: bycanskyy
+  districts: [buchanskyi]
+  level: red
+  threats: [ballistic]
+- text: "❗️Тривога в Бучанському районі.\n\n🇺🇦Бучанський інсайдер❗️"
+  source: bycanskyy
+  districts: [buchanskyi]
+  level: alert
