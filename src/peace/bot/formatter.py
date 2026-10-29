@@ -1,7 +1,7 @@
 """User-facing message formatting (Ukrainian).
 
-Built to be read in two seconds: the first line (what a locked phone shows) says where and what,
-the second how long and whether it is confirmed; technical details are folded away.
+Every card has the same labelled lines (status, zones, threats, start, confidence, last update,
+sources), and zones in the same state share one card so a wide attack stays short.
 """
 from __future__ import annotations
 
@@ -22,28 +22,19 @@ LEVEL_ICON = {
     AlertLevel.ALERT: "⚠️",
     AlertLevel.NONE: "🟢",
 }
-# Headline when a level is known but no specific threat type is
-LEVEL_HEAD = {
-    AlertLevel.RED: "РАКЕТНА НЕБЕЗПЕКА",
-    AlertLevel.YELLOW: "ЗАГРОЗА БпЛА",
-    AlertLevel.ALERT: "ПОВІТРЯНА ТРИВОГА",
+LEVEL_NAME = {
+    AlertLevel.RED: "🔴 Червоний рівень",
+    AlertLevel.YELLOW: "🟡 Жовтий рівень",
+    AlertLevel.ALERT: "⚠️ Повітряна тривога, тип уточнюється",
 }
-# Most dangerous first: the first threat sets the icon
+# Most dangerous first
 THREAT_ORDER = ["ballistic", "cruise_missile", "missile", "aviation", "shahed"]
-THREAT_ICON = {"ballistic": "🚀", "cruise_missile": "🔴", "missile": "🔴", "aviation": "✈️", "shahed": "🟡"}
-THREAT_HEAD = {
-    "ballistic": "БАЛІСТИКА",
-    "cruise_missile": "КРИЛАТІ РАКЕТИ",
-    "missile": "РАКЕТИ",
-    "aviation": "ЗЛІТ АВІАЦІЇ",
-    "shahed": "ДРОНИ",
-}
 THREAT_NAMES = {
-    "ballistic": "балістика",
-    "cruise_missile": "крилаті ракети",
-    "missile": "ракети",
-    "aviation": "зліт авіації (МіГ-31К / Ту-95)",
-    "shahed": "дрони",
+    "ballistic": "Балістика",
+    "cruise_missile": "Крилаті ракети",
+    "missile": "Ракети",
+    "aviation": "Зліт авіації (МіГ-31К / Ту-95)",
+    "shahed": "БпЛА",
 }
 RANK = {AlertLevel.NONE: 0, AlertLevel.ALERT: 1, AlertLevel.YELLOW: 2, AlertLevel.RED: 3}
 
@@ -60,16 +51,17 @@ def _ordered(threats: list[str]) -> list[str]:
     return sorted(threats, key=lambda t: THREAT_ORDER.index(t) if t in THREAT_ORDER else len(THREAT_ORDER))
 
 
-def _sources(s: Situation) -> str:
+def _sources(group: list[Situation]) -> str:
+    posts = {src: mid for s in group for src, mid in s.posts.items()}
     parts = []
-    for src in s.sources:
+    for src in sorted({src for s in group for src in s.sources}):
         if src == OFFICIAL_SOURCE:
             parts.append("alerts.in.ua")
-        elif src in s.posts:
-            parts.append(f'<a href="https://t.me/{escape(src)}/{s.posts[src]}">{escape(src)}</a>')
+        elif src in posts:
+            parts.append(f'<a href="https://t.me/{escape(src)}/{posts[src]}">{escape(src)}</a>')
         else:
             parts.append(escape(src))
-    return ", ".join(parts)
+    return ", ".join(parts) or "—"
 
 
 def _hhmm(dt: datetime | None) -> str:
@@ -85,69 +77,76 @@ def duration(start: datetime, end: datetime) -> str:
     return f"{mins // 60} год {mins % 60} хв" if mins % 60 else f"{mins // 60} год"
 
 
-def headline(s: Situation) -> str:
-    """The first line: icon, zone, threats."""
-    name = escape(district_name(s.district))
-    if s.level is AlertLevel.NONE:
-        return f"🟢 <b>{name}: ЗАГРОЗУ ЗНЯТО</b>" if s.cleared else f"🟢 <b>{name}: ВІДБІЙ ТРИВОГИ</b>"
-    threats = _ordered(s.threats)
-    if threats:
-        return f"{THREAT_ICON.get(threats[0], LEVEL_ICON[s.level])} <b>{name}: " \
-               f"{' + '.join(THREAT_HEAD.get(t, t) for t in threats)}</b>"
-    return f"{LEVEL_ICON[s.level]} <b>{name}: {LEVEL_HEAD[s.level]}</b>"
+def _zones(group: list[Situation]) -> str:
+    return escape(", ".join(district_name(s.district) for s in group))
 
 
-def format_situation(s: Situation, now: datetime | None = None) -> str:
+def format_group(group: list[Situation], now: datetime | None = None) -> str:
+    """One card for zones that share the same level and threats."""
     now = now or datetime.now(timezone.utc)
-    lines = [headline(s)]
+    first = group[0]
+    since = min((s.since for s in group if s.since), default=None)
+    updated = max((s.updated_at for s in group if s.updated_at), default=None)
+    cleared = _ordered(list({t for s in group for t in s.cleared}))
 
-    if s.level is AlertLevel.NONE:
-        if s.cleared:
-            lines.append(f"Минуло: {_names(_ordered(s.cleared))}")
-        if s.since and s.updated_at:
-            lines.append(f"Тривога тривала {duration(s.since, s.updated_at)} · {_hhmm(s.updated_at)}")
+    if first.level is AlertLevel.NONE:
+        lines = [f"Статус: <b>🟢 {'Загрозу знято' if cleared else 'Відбій тривоги'}</b>",
+                 f"Область: {_zones(group)}"]
+        if cleared:
+            lines.append(f"Минуло: {_names(cleared)}")
+        if since and updated:
+            lines.append(f"Тривала: {_hhmm(since)}–{_hhmm(updated)} ({duration(since, updated)})")
         return "\n".join(lines)
 
-    status = [] if s.confirmed else ["❔ попередньо"]
-    if s.since:
-        status.append(f"з {_hhmm(s.since)}, {duration(s.since, now)}")
-    if status:
-        lines.append(" · ".join(status))
-    if s.cleared:
-        lines.append(f"✅ Минуло: {_names(_ordered(s.cleared))}")
-    if s.updated_at:
-        age_min = int((now - s.updated_at).total_seconds() // 60)
-        if age_min >= settings().stale_after_minutes:
-            lines.append(f"⏳ оновлень немає {duration(s.updated_at, now)} — статус може бути застарілим")
-
-    details = []
-    if s.direction:
-        details.append(f"Напрямок: {escape(s.direction)}")
-    details.append(f"Джерела: {_sources(s)} · достовірність {int(s.confidence * 100)}%")
-    lines.append("<blockquote expandable>" + "\n".join(details) + "</blockquote>")
+    confidence = min(s.confidence for s in group)
+    confirmed = all(s.confirmed for s in group)
+    lines = [
+        f"Статус: <b>{LEVEL_NAME[first.level]}</b>",
+        f"Область: <b>{_zones(group)}</b>",
+        f"Небезпека: {_names(_ordered(first.threats)) or 'уточнюється'}",
+        f"Початок: {_hhmm(since)} ({duration(since, now)})" if since else "Початок: —",
+        f"Достовірність: {int(confidence * 100)}%" + ("" if confirmed else " ❔ ще не підтверджено"),
+        f"Остання інформація: {_hhmm(updated)}",
+    ]
+    if updated and (now - updated).total_seconds() // 60 >= settings().stale_after_minutes:
+        lines.append(f"⏳ оновлень немає {duration(updated, now)} — статус може бути застарілим")
+    if cleared:
+        lines.append(f"✅ Минуло: {_names(cleared)}")
+    directions = sorted({s.direction for s in group if s.direction})
+    if directions:
+        lines.append(f"Напрямок: {escape('; '.join(directions))}")
+    lines.append(f"Джерела: {_sources(group)}")
     return "\n".join(lines)
 
 
-def _sorted(items: list[Situation]) -> list[Situation]:
-    return sorted(items, key=lambda s: (-RANK[s.level], s.district))
+def format_situation(s: Situation, now: datetime | None = None) -> str:
+    return format_group([s], now)
 
 
-def format_snapshot(items: list[Situation]) -> str:
+def _grouped(items: list[Situation], now: datetime | None = None) -> str:
+    """Most dangerous first; zones with the same level, threats and clears share one card."""
+    groups: dict[tuple, list[Situation]] = {}
+    for s in sorted(items, key=lambda s: (-RANK[s.level], s.district)):
+        groups.setdefault((s.level, tuple(sorted(s.threats)), tuple(sorted(s.cleared))), []).append(s)
+    return "\n\n".join(format_group(g, now) for g in groups.values())
+
+
+def format_snapshot(items: list[Situation], now: datetime | None = None) -> str:
     if not items:
         return "🟢 Загроз для Києва та області зараз немає."
-    return "\n\n".join(format_situation(s) for s in _sorted(items))
+    return _grouped(items, now)
 
 
 def format_live(items: list[Situation], now: datetime | None = None) -> str:
     """The live "status now" message that the bot keeps editing in place."""
     now = now or datetime.now(timezone.utc)
     stamp = now.astimezone(KYIV_TZ).strftime("%H:%M:%S")
-    return f"📍 <b>Статус зараз</b>\n\n{format_snapshot(items)}\n\n<i>Оновлено о {stamp}</i>"
+    return f"📍 <b>Статус зараз</b>\n\n{format_snapshot(items, now)}\n\n<i>Оновлено о {stamp}</i>"
 
 
 def format_update(items: list[Situation]) -> str:
     """A push notification with the zones that just changed."""
-    return "\n\n".join(format_situation(s) for s in _sorted(items))
+    return _grouped(items)
 
 
 def with_start(new: Situation, old: Situation | None) -> Situation:

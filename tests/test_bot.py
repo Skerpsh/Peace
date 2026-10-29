@@ -125,7 +125,7 @@ def test_notifier_push_edit_and_blocked(tmp_path):
                                 date=datetime.now(timezone.utc)))
         await n.flush({s.district: s for s in agg.add(ev)})
 
-        pushed = [c for c, t in bot.sent if "ДРОНИ" in t and "Статус зараз" not in t]
+        pushed = [c for c, t in bot.sent if "БпЛА" in t and "Статус зараз" not in t]
         assert sorted(pushed) == [1, 4]
         assert (1, 50) in bot.edited                  # live status edited in place
         assert any(c == 4 and "Статус зараз" in t for c, t in bot.sent)   # lost live status re-sent
@@ -164,16 +164,41 @@ def test_message_format_reads_at_a_glance():
     s = Situation(district="kyiv_all", level=AlertLevel.RED, threats=["shahed", "ballistic"],
                   confidence=0.5, sources=["mon1"], posts={"mon1": 7},
                   updated_at=now - timedelta(minutes=1), since=now - timedelta(minutes=40))
-    lines = format_situation(s, now).split("\n")
-    assert lines[0] == "🚀 <b>Київ: БАЛІСТИКА + ДРОНИ</b>"            # most dangerous first
-    assert lines[1] == "❔ попередньо · з 14:00, 40 хв"
-    assert "<blockquote expandable>" in lines[2] and "t.me/mon1/7" in lines[2]
+    assert format_situation(s, now).split("\n") == [
+        "Статус: <b>🔴 Червоний рівень</b>",
+        "Область: <b>Київ</b>",
+        "Небезпека: Балістика, БпЛА",                                  # most dangerous first
+        "Початок: 14:00 (40 хв)",
+        "Достовірність: 50% ❔ ще не підтверджено",
+        "Остання інформація: 14:39",
+        'Джерела: <a href="https://t.me/mon1/7">mon1</a>',
+    ]
     assert "УКРИТТ" not in format_situation(s, now).upper()           # no instructions to act
 
     clear = with_start(S(AlertLevel.NONE), s)
     clear.updated_at = now + timedelta(minutes=32)
     assert format_situation(clear, now).split("\n") == [
-        "🟢 <b>Київ: ВІДБІЙ ТРИВОГИ</b>", "Тривога тривала 1 год 12 хв · 15:12"]
+        "Статус: <b>🟢 Відбій тривоги</b>", "Область: Київ", "Тривала: 14:00–15:12 (1 год 12 хв)"]
+
+
+def test_same_state_zones_share_one_card():
+    from peace.bot.formatter import format_snapshot
+    now = datetime(2026, 1, 1, 12, 40, tzinfo=timezone.utc)
+
+    def zone(d, level, threats, conf, src):
+        return Situation(district=d, level=level, threats=threats, confidence=conf, confirmed=conf >= 0.6,
+                         sources=[src], updated_at=now, since=now)
+
+    text = format_snapshot([
+        zone("buchanskyi", AlertLevel.YELLOW, ["shahed"], 0.84, "mon1"),
+        zone("kyiv_all", AlertLevel.RED, ["ballistic"], 1.0, "official"),
+        zone("brovarskyi", AlertLevel.YELLOW, ["shahed"], 0.5, "mon2"),
+    ], now)
+    red, yellow = text.split("\n\n")
+    assert "Червоний" in red and "Київ" in red
+    assert "Область: <b>Броварський р-н, Бучанський р-н</b>" in yellow
+    assert "Достовірність: 50% ❔" in yellow                           # weakest zone sets confidence
+    assert "Джерела: mon1, mon2" in yellow
 
 
 def test_red_pushes_go_first_and_delay_is_recorded(tmp_path):
