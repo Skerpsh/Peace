@@ -94,3 +94,23 @@ def test_new_threat_cancels_pending_clear_votes():
     feed(agg, "official", "Київ: нова група шахедів", 11)
     feed(agg, "mon2", "Київ — відбій", 12)
     assert kyiv(agg) is not None          # mon1 vote was invalidated by the new threat at minute 11
+
+
+def test_edited_and_deleted_posts_replace_what_they_said():
+    from dataclasses import replace
+
+    agg = Aggregator()
+    ev = extract(RawMessage(source="mon1", message_id=500, text="Київ — балістика!", date=T0))
+    agg.add(ev)
+    assert kyiv(agg).level is AlertLevel.RED
+
+    # Edited into drones over Brovary: Kyiv's red is gone, Brovary gets yellow
+    edited = extract(RawMessage(source="mon1", message_id=500, text="Бровари — шахеди", date=T0))
+    changed = {s.district: s for s in agg.add(edited)}
+    assert changed["kyiv_all"].level is AlertLevel.NONE
+    assert changed["brovarskyi"].level is AlertLevel.YELLOW
+
+    # Deleted: nothing it said remains
+    gone = replace(edited, districts=[], raw_text="", retracted=True)
+    assert [s.level for s in agg.add(gone)] == [AlertLevel.NONE]
+    assert agg.snapshot() == []

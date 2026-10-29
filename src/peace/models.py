@@ -22,6 +22,7 @@ class RawMessage:
     date: datetime
     edited: bool = False
     preload: bool = False           # True for recent history loaded at startup (no push notification)
+    deleted: bool = False           # The channel deleted this post
 
 
 @dataclass(slots=True)
@@ -39,6 +40,7 @@ class ParsedEvent:
     # (e.g. "missile threat cleared, UAVs remain" -> ["missile", ...])
     cleared_threats: list[str] = field(default_factory=list)
     preload: bool = False           # True when replaying startup history (updates /status silently)
+    retracted: bool = False         # Withdraws what this post said before (deleted or edited into no alert)
 
 
 @dataclass(slots=True)

@@ -14,7 +14,7 @@ from peace.collector.official_api import run_official_poller
 from peace.collector.telegram_listener import run_listener
 from peace.config import settings
 from peace.health import health
-from peace.models import ParsedEvent, RawMessage, Situation
+from peace.models import AlertLevel, ParsedEvent, RawMessage, Situation
 from peace.monitor import Monitor
 from peace.parser.extractor import extract
 from peace.storage.db import Database
@@ -32,8 +32,14 @@ async def pipeline(
     """RawMessage -> ParsedEvent."""
     while True:
         raw = await raw_q.get()
-        ev = extract(raw)
-        if ev:
+        ev = None if raw.deleted else extract(raw)
+        if ev is None and (raw.deleted or raw.edited):
+            ev = ParsedEvent(source=raw.source, message_id=raw.message_id, timestamp=raw.date, districts=[],
+                             level=AlertLevel.NONE, threats=[], direction=None, is_all_clear=False,
+                             raw_text="", retracted=True)
+            log.info("Retracted [%s#%s] (%s)", raw.source, raw.message_id, "deleted" if raw.deleted else "edited")
+            await event_q.put(ev)
+        elif ev:
             ev.preload = raw.preload
             log.info(
                 "Matched [%s#%s]%s -> districts=%s level=%s threats=%s cleared=%s all_clear=%s",
@@ -77,7 +83,8 @@ async def analyzer_loop(
             except Exception:  # noqa: BLE001
                 log.exception("Delivery failed")
             continue
-        await db.log_event(ev)
+        if not ev.retracted:
+            await db.log_event(ev)
         changes = agg.add(ev)
         if ev.preload:
             continue

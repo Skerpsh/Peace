@@ -101,6 +101,7 @@ async def run_listener(
         return
 
     seen: dict[tuple[str, int, str], None] = {}  # insertion-ordered set
+    texts: dict[tuple[str, int], str] = {}  # latest text per post, to recognise edits
     last_id: dict[str, int] = {}
 
     async def _emit(
@@ -112,10 +113,16 @@ async def run_listener(
         key = (source.lower(), msg_id, clean)
         if key in seen:
             return
+        # The same post with new text is an edit, whichever collector saw it; the web page and
+        # Telethon space the same post differently, so spacing alone is not an edit
+        flat = "".join(clean.split())
+        edited = edited or texts.get(key[:2], flat) != flat
         seen[key] = None
+        texts[key[:2]] = flat
         if len(seen) > MAX_SEEN:
             for old in list(seen)[: MAX_SEEN // 5]:
                 del seen[old]
+                texts.pop(old[:2], None)
         if msg_id > last_id.get(source.lower(), 0):
             last_id[source.lower()] = msg_id
         await queue.put(
@@ -128,6 +135,10 @@ async def run_listener(
                 preload=preload,
             )
         )
+
+    async def _delete(source: str, msg_id: int) -> None:
+        await queue.put(RawMessage(source=source, message_id=msg_id, text="",
+                                   date=datetime.now(timezone.utc), deleted=True))
 
     headers = {
         "User-Agent": (
@@ -160,7 +171,7 @@ async def run_listener(
             preload_done.set()
 
         # 2. Optional Telethon listener if session file exists
-        telethon_task = asyncio.create_task(_optional_telethon_listener(raw_usernames, _emit))
+        telethon_task = asyncio.create_task(_optional_telethon_listener(raw_usernames, _emit, _delete))
 
         # 3. Continuous 5-second web poller
         try:
@@ -176,7 +187,7 @@ async def run_listener(
             telethon_task.cancel()
 
 
-async def _optional_telethon_listener(raw_usernames: list[str], emit_fn) -> None:
+async def _optional_telethon_listener(raw_usernames: list[str], emit_fn, delete_fn) -> None:
     """Attaches Telethon push handlers if an authorized session file exists; never crashes the bot."""
     cfg = settings()
     session_file = Path(f"{cfg.tg_session_name}.session")
@@ -226,6 +237,12 @@ async def _optional_telethon_listener(raw_usernames: list[str], emit_fn) -> None
         async def on_edit(event):
             source = names.get(event.chat_id, str(event.chat_id))
             await emit_fn(source, event.id, event.raw_text or "", event.date, True, False)
+
+        @client.on(events.MessageDeleted(chats=valid_chats))
+        async def on_delete(event):
+            source = names.get(event.chat_id, str(event.chat_id))
+            for msg_id in event.deleted_ids:
+                await delete_fn(source, msg_id)
 
         log.info("Telethon push listener attached alongside web poller")
         await client.run_until_disconnected()

@@ -36,9 +36,16 @@ class Aggregator:
             for old in list(self._seen)[: _MAX_SEEN // 5]:
                 del self._seen[old]
 
+        # An edited or deleted post replaces what it said before, possibly in other zones
+        touched = self._drop(ev.source, ev.message_id) if ev.message_id else set()
+        if not ev.retracted:
+            for d in ev.districts:
+                self._events[d].append(ev)
+        districts = [] if ev.retracted else list(ev.districts)
+        districts += sorted(touched - set(districts))
+
         changed: list[Situation] = []
-        for d in ev.districts:
-            self._events[d].append(ev)
+        for d in districts:
             new = self._compute(d)
             old = self._state.get(d)
             if self.is_meaningful_change(old, new):
@@ -51,6 +58,16 @@ class Aggregator:
         return [s for s in result if s.level is not AlertLevel.NONE]
 
     # --- internal ---------------------------------------------------------
+
+    def _drop(self, source: str, message_id: int) -> set[str]:
+        """Removes earlier versions of a post; returns the zones they were in."""
+        touched = set()
+        for d, evs in self._events.items():
+            kept = [e for e in evs if not (e.source == source and e.message_id == message_id)]
+            if len(kept) != len(evs):
+                self._events[d] = kept
+                touched.add(d)
+        return touched
 
     def _compute(self, district: str) -> Situation:
         evs = sorted(self._events[district], key=lambda e: e.timestamp)
