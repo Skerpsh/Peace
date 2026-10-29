@@ -91,7 +91,7 @@ def format_group(group: list[Situation], now: datetime | None = None) -> str:
 
     if first.level is AlertLevel.NONE:
         lines = [f"Статус: <b>🟢 {'Загрозу знято' if cleared else 'Відбій тривоги'}</b>",
-                 f"Область: {_zones(group)}"]
+                 f"Зона: {_zones(group)}"]
         if cleared:
             lines.append(f"Минуло: {_names(cleared)}")
         if since and updated:
@@ -102,7 +102,7 @@ def format_group(group: list[Situation], now: datetime | None = None) -> str:
     confirmed = all(s.confirmed for s in group)
     lines = [
         f"Статус: <b>{LEVEL_NAME[first.level]}</b>",
-        f"Область: <b>{_zones(group)}</b>",
+        f"Зона: <b>{_zones(group)}</b>",
         f"Небезпека: {_names(_ordered(first.threats)) or 'уточнюється'}",
         f"Початок: {_hhmm(since)} ({duration(since, now)})" if since else "Початок: —",
         f"Достовірність: {int(confidence * 100)}%" + ("" if confirmed else " ❔ ще не підтверджено"),

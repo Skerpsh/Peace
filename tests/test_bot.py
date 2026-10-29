@@ -166,7 +166,7 @@ def test_message_format_reads_at_a_glance():
                   updated_at=now - timedelta(minutes=1), since=now - timedelta(minutes=40))
     assert format_situation(s, now).split("\n") == [
         "Статус: <b>🔴 Червоний рівень</b>",
-        "Область: <b>Київ</b>",
+        "Зона: <b>Київ</b>",
         "Небезпека: Балістика, БпЛА",                                  # most dangerous first
         "Початок: 14:00 (40 хв)",
         "Достовірність: 50% ❔ ще не підтверджено",
@@ -178,7 +178,7 @@ def test_message_format_reads_at_a_glance():
     clear = with_start(S(AlertLevel.NONE), s)
     clear.updated_at = now + timedelta(minutes=32)
     assert format_situation(clear, now).split("\n") == [
-        "Статус: <b>🟢 Відбій тривоги</b>", "Область: Київ", "Тривала: 14:00–15:12 (1 год 12 хв)"]
+        "Статус: <b>🟢 Відбій тривоги</b>", "Зона: Київ", "Тривала: 14:00–15:12 (1 год 12 хв)"]
 
 
 def test_same_state_zones_share_one_card():
@@ -196,7 +196,7 @@ def test_same_state_zones_share_one_card():
     ], now)
     red, yellow = text.split("\n\n")
     assert "Червоний" in red and "Київ" in red
-    assert "Область: <b>Броварський р-н, Бучанський р-н</b>" in yellow
+    assert "Зона: <b>Броварський р-н, Бучанський р-н</b>" in yellow
     assert "Достовірність: 50% ❔" in yellow                           # weakest zone sets confidence
     assert "Джерела: mon1, mon2" in yellow
 
