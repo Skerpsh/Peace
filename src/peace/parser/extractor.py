@@ -15,8 +15,9 @@ _OTHER_REGIONS = (
     "луган", "сумщин", "суми", "кіровоград", "хмельниц", "франків",
 )
 
-# Prevents "київська" / "київщина" from matching kyiv_all ("київ")
-_OBLAST_ADJ_RE = re.compile(r"ки(?:їв|єв|ев)(?:ськ|ск|щин)\w*")
+# Kept out of kyiv_all matching: "київська" / "київщина" ("київ"), and Sofiivska / Petropavlivska
+# Borshchahivka, Bucha raion villages next to Kyiv's Borshchahivka ("борщагів")
+_OBLAST_ADJ_RE = re.compile(r"ки(?:їв|єв|ев)(?:ськ|ск|щин)\w*|(?:софіївськ|петропавлівськ)\w*\s+борщагів\w*")
 # Place names elsewhere that contain Kyiv aliases: Podilskyi raion of Odesa Oblast,
 # Obukhivka near Dnipro ("обухів")
 _FALSE_ALIAS_RE = re.compile(r"подільськ\w+\s+район\w*\s+одещин\w*|обухівк\w*")
@@ -93,6 +94,11 @@ def _has_any(text: str, markers: list[str]) -> bool:
     return any(m in text for m in markers)
 
 
+def _has_word(text: str, markers: list[str]) -> bool:
+    """Like _has_any, but a marker must start a word ("йде на" is not inside "вийде на")."""
+    return any(re.search(rf"(?<!\w){re.escape(m)}", text) for m in markers)
+
+
 def level_for_threats(found_threats: list[str] | set[str]) -> AlertLevel:
     """Alert level is determined by threat type: UAV -> yellow, missiles -> red."""
     cfg = threats()["threats"]
@@ -120,6 +126,7 @@ def _analyze_clauses(text: str) -> tuple[list[str], list[str], bool, str, list[s
     bare_clear = False
     active_parts: list[str] = []
     clear_clauses: list[str] = []
+    moving = False
 
     for clause in re.split(cfg["clause_split"], text):
         clause = clause.strip()
@@ -137,11 +144,13 @@ def _analyze_clauses(text: str) -> tuple[list[str], list[str], bool, str, list[s
                 bare_clear = True
                 clear_clauses.append(clause)
         else:
-            if not found and _has_any(clause, movement_markers):
-                found = ["shahed"]
+            moving = moving or (not found and _has_word(clause, movement_markers))
             active.extend(found)
             active_parts.append(clause)
 
+    # Untyped movement means drones, unless the post names what is flying ("летять на Київ, ракети")
+    if moving and not active:
+        active = ["shahed"]
     active = _dedup_missile(list(dict.fromkeys(active)))
     # If a threat appears as both active and cleared, keep it active for safety
     cleared = [t for t in dict.fromkeys(cleared) if t not in active]
@@ -187,7 +196,7 @@ def extract(msg: RawMessage) -> ParsedEvent | None:
         full_clear
         or bool(cleared)
         or _fallback_level(active_text) is not AlertLevel.NONE
-        or _has_any(active_text, mk.get("movement", []))
+        or _has_word(active_text, mk.get("movement", []))
     )
 
     # When a message clears one district while noting another remains under alert

@@ -69,3 +69,25 @@
   districts: [vyshhorodskyi]
   level: yellow
   threats: [shahed]
+# Local raion channels (2026-10-29)
+- text: "🤼‍♂️ Білоцерківці — на чемпіонаті світу з боротьби! Валентин вийде на килим 30 жовтня."
+  source: bilatserkva24
+  ignored: true
+- text: "Внаслідок ранкової атаки ворожих дронів у Бориспільському районі виникла пожежа на сільськогосподарському підприємстві, - КОВА"
+  source: boryspilnews
+  ignored: true
+- text: "📍 Найсвіжіші новини Борщагівки (Софіївська Борщагівка, Чайки)\n- Актуальні новини, а саме:\n🗣 Тривоги\n⚠️ Рух шахедів\n❗ Ракети\nПІДПИСУЙТЕСЬ"
+  source: vyshgorod_info
+  ignored: true
+- text: "Шахед над Софіївською Борщагівкою!"
+  districts: [buchanskyi]
+  level: yellow
+- text: "❗️ Через Десну летять далі Київ, дві ракети!"
+  source: kyiv_golovne
+  districts: [kyiv_all]
+  level: red
+  threats: [missile]
+- text: "❗️ Знову на Білогородку а далі на Чайки полетить"
+  source: kyiv_golovne
+  districts: [buchanskyi]
+  level: yellow

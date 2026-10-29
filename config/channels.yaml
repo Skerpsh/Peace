@@ -32,3 +32,18 @@ channels:
     weight: 0.49
     official: false
     default_district: buchanskyi
+  - username: boryspilnews            # Boryspil raion news & alerts (33K subscribers)
+    weight: 0.45
+    official: false
+    default_district: boryspilskyi
+  - username: vyshgorod_info          # Vyshhorod raion news & alerts
+    weight: 0.45
+    official: false
+    default_district: vyshhorodskyi
+  - username: fastivnews              # Fastiv raion news & alerts
+    weight: 0.45
+    official: false
+    default_district: fastivskyi
+  - username: deraketaua              # All-Ukraine air threat monitoring (156K subscribers)
+    weight: 0.45
+    official: false
