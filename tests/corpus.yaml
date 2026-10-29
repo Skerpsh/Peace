@@ -59,3 +59,13 @@
   source: kpszsu
   districts: [oblast_all]
   level: yellow
+# Kyiv Oblast Military Administration: all-clear for one raion while others stay under alert
+- text: "🟢 Броварський район — відбій повітряної тривоги\n\n⚠️ Зверніть увагу, повітряна тривога досі триває у:\n- Бориспільський район\n- Вишгородський район"
+  source: kyivoda
+  districts: [brovarskyi]
+  all_clear: true
+- text: "🟡 Вишгородський район — повітряна тривога, жовтий рівень: Дронова загроза (жовтий рівень)"
+  source: kyivoda
+  districts: [vyshhorodskyi]
+  level: yellow
+  threats: [shahed]

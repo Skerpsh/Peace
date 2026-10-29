@@ -11,6 +11,9 @@ channels:
     weight: 0.95
     official: true
     default_district: kyiv_all
+  - username: kyivoda                 # Kyiv Oblast Military Administration (official): alert and all-clear per raion
+    weight: 0.95
+    official: true
   - username: kievinfo_kyiv           # Kyiv news & monitoring
     weight: 0.65
     official: false
