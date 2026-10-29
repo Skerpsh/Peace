@@ -85,6 +85,12 @@ async def _poll_all(
     return ok
 
 
+def is_stale(date: datetime, now: datetime | None = None) -> bool:
+    """Older than the startup preload window. The poller re-reads each channel's last posts and Telethon
+    reports edits of old posts; neither is news, and after a restart such posts were never preloaded."""
+    return date < (now or datetime.now(timezone.utc)) - PRELOAD_LOOKBACK
+
+
 async def run_listener(
     queue: asyncio.Queue[RawMessage],
     preload_done: asyncio.Event | None = None,
@@ -108,7 +114,7 @@ async def run_listener(
         source: str, msg_id: int, text: str, date: datetime, edited: bool, preload: bool
     ) -> None:
         clean = (text or "").strip()
-        if not clean:
+        if not clean or (not preload and is_stale(date)):
             return
         key = (source.lower(), msg_id, clean)
         if key in seen:

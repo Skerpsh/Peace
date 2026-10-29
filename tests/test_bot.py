@@ -227,3 +227,11 @@ def test_red_pushes_go_first_and_delay_is_recorded(tmp_path):
         await db.conn.close()
 
     asyncio.run(run())
+
+
+def test_old_posts_reread_by_the_poller_are_not_news():
+    from datetime import timedelta
+    from peace.collector.telegram_listener import is_stale
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    assert is_stale(now - timedelta(hours=10), now)        # this morning's alert after a restart
+    assert not is_stale(now - timedelta(minutes=5), now)
