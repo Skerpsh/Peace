@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from peace.analyzer.aggregator import Aggregator
 from peace.bot.formatter import KYIV_TZ, RANK, format_live, format_update, with_start
@@ -27,6 +28,9 @@ from peace.models import AlertLevel, Situation
 from peace.storage.db import Database, Recipient
 
 log = logging.getLogger(__name__)
+
+# Under every push: lets users flag a wrong notification (handled in handlers.py)
+REPORT_KB = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚠️ Помилка", callback_data="err")]])
 
 SEND_PER_SEC = 25  # Telegram allows bots about 30 messages per second in total
 
@@ -118,7 +122,7 @@ class Notifier:
         try:
             if await self._safe(chat_id, lambda: self.bot.send_message(
                     chat_id, format_update(push), disable_web_page_preview=True,
-                    disable_notification=is_silent(push))):
+                    disable_notification=is_silent(push), reply_markup=REPORT_KB)):
                 self.counters["push"] += 1
         except Exception as e:  # noqa: BLE001
             self.counters["failed"] += 1

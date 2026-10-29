@@ -43,6 +43,13 @@ CREATE TABLE IF NOT EXISTS ignored (
     ts         TEXT,
     text       TEXT
 );
+CREATE TABLE IF NOT EXISTS reports (
+    chat_id    INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,   -- the notification the user flagged
+    ts         TEXT,
+    text       TEXT,
+    PRIMARY KEY (chat_id, message_id)
+);
 """
 
 # Kyiv used to be split into city districts; it is now a single kyiv_all zone.
@@ -167,6 +174,13 @@ class Database:
             (msg.source, msg.message_id, msg.date.isoformat(), msg.text),
         )
         await self.conn.commit()
+
+    async def add_report(self, chat_id: int, message_id: int, ts: str, text: str) -> bool:
+        """Saves a user's "this notification is wrong" report; False if already reported."""
+        cur = await self.conn.execute(
+            "INSERT OR IGNORE INTO reports VALUES (?, ?, ?, ?)", (chat_id, message_id, ts, text))
+        await self.conn.commit()
+        return cur.rowcount == 1
 
     async def count_since(self, table: str, since: str, until: str = "9999") -> int:
         """Rows of `events` or `ignored` with since <= ts < until (ISO strings, UTC)."""

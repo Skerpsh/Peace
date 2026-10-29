@@ -126,6 +126,16 @@ def build_router(db: Database, notifier: Notifier, monitor: Monitor) -> Router:
         await q.message.edit_text(_zones_text(new), reply_markup=_zones_keyboard(new))
         await q.answer("Збережено")
 
+    @router.callback_query(F.data == "err")
+    async def report(q: CallbackQuery) -> None:
+        m = q.message
+        if await db.add_report(m.chat.id, m.message_id, datetime.now(timezone.utc).isoformat(), m.html_text or ""):
+            if admin_id:
+                await q.bot.send_message(admin_id, f"⚠️ <b>Скарга на сповіщення</b> (чат {m.chat.id})\n\n{m.html_text}",
+                                         disable_web_page_preview=True)
+        await m.edit_reply_markup(reply_markup=None)
+        await q.answer("Дякуємо! Перевіримо це сповіщення.")
+
     @router.message(Command("quiet"))
     @router.message(F.text == BTN_QUIET)
     async def quiet(m: Message) -> None:
